@@ -80,7 +80,7 @@ int main(){
 		//display message
 		cout << "Received: " << string(buf, 0, bytesRecv) << endl;
 		//resend message
-		send(clientSocket, buf, bytesRecv + 1, 0);
+		send(clientSocket, "ack", 4, 0);
 	}	
 
 	//close socket
