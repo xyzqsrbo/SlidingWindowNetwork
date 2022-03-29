@@ -58,7 +58,7 @@ bool check(int* start, int* end, int shift_index, int seq_range);
 
 int listen_for_packets(packet window[], bool recv_window[], int socketfd);
 
-bool place_into_window(packet window[], int seq_range, int start, int end);
+bool place_into_window(packet window[], bool recv_window[], int seq_range, int start, int end, int seq_num);
 
 
 
@@ -108,13 +108,15 @@ int main(int argc, char *argv[])
 
 thread first(listen_for_packets, window, recv_window, socketfd);
 
-
-while(sizeof(MyFile) != file_size){
+int z = 0;
+while(z != 1){
 
     start = 0;
     end = window_size - 1;
 
     while(buffer_index < sizeof(buffer)){
+        shift_index = 0;
+        printf("%s", buffer);
 
     while(!ack_flag){};
 
@@ -123,9 +125,13 @@ while(sizeof(MyFile) != file_size){
 
     unique_lock<mutex> lck(mtx);
 
-    place_into_window(window, seq_range, start, end);
+    place_into_window(window, recv_window, seq_range, start, end, ack.seq_num);
+
+    cout << ack.seq_num << "Bro" << endl;
 
     ack.seq_num = htonl(ack.seq_num);
+
+    
 
     sendto(socketfd, (struct ack*)&ack, sizeof(ack), 0, 
                                 (const struct sockaddr *) &client_addr, sizeof(client_addr));
@@ -138,18 +144,20 @@ while(sizeof(MyFile) != file_size){
 
     check(&start,&end,shift_index, seq_range);
 
-
+    write_into_buffer(window,buffer, &buffer_index, shift_index);
 
     shiftWindow(recv_window, window, shift_index, window_size);
 
-    write_into_buffer(window,buffer, &buffer_index, shift_index);
+    
 
 
-
+    ack_flag = false;
     seq_alert.notify_all();
+    
+    
 
     }
-    
+    z++;
     
 
 }
@@ -159,10 +167,12 @@ MyFile.close();
 
 int write_into_buffer(packet window[], char buffer[], int* buffer_index,int shift_index) {
     int i = 0;
+    cout << "shift_index: " << shift_index << endl;
      while(i != shift_index){
         buffer[*buffer_index] = window[i].data;
         i++;
-        *buffer_index++;
+        cout <<" data: " << buffer[*buffer_index] << endl;
+        *buffer_index = *buffer_index + 1;
     } 
     return 1 ;
 }
@@ -171,12 +181,14 @@ int write_into_buffer(packet window[], char buffer[], int* buffer_index,int shif
 
 
 
-bool place_into_window(packet window[], int seq_range, int start, int end) {
-
-        if(start < end || ntohl(incoming.seq_num) > end ) {
-            window[ntohl(incoming.seq_num) - start] = incoming;
+bool place_into_window(packet window[], bool recv_window[], int seq_range, int start, int end, int seq_num) {
+       cout << seq_range << " - " << start << " - " << end << " - " << seq_num << endl;
+        if(start < end || seq_num > end ) {
+            window[seq_num - start] = incoming;
+            recv_window[seq_num - start] = true;
         } else {
-            window[seq_range - start + ntohl(incoming.seq_num)] = incoming;
+            window[seq_range - start + seq_num] = incoming;
+            recv_window[seq_range - start + seq_num] = true;
         }
         
     
@@ -194,7 +206,7 @@ int listen_for_packets(packet window[], bool recv_window[], int socketfd){
 
 
 
-     cout << incoming.data << endl;
+     cout << "boogie woogie " << incoming.data << endl;
 
 
 
@@ -212,7 +224,7 @@ int listen_for_packets(packet window[], bool recv_window[], int socketfd){
 
         ack_flag = true;
        seq_alert.wait(lck);
-       ack_flag = false;
+       
 
     }
 
@@ -236,11 +248,11 @@ bool check(int* start, int* end, int shift_index, int seq_range){
     *start = *start + shift_index;
     *end = *end + shift_index;
 
-    if(*start > (seq_range -1 )) {
+    if(*start > (seq_range - 1 )) {
         *start = *start - seq_range;
     }
 
-     if(*end > (seq_range -1)){
+     if(*end > (seq_range - 1)){
          *end = *end -seq_range;
      }
 

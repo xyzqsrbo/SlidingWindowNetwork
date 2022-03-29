@@ -131,7 +131,7 @@ int main(int argc, char *argv[])
     server_addr.sin_port = htons(1065);
 
     
-    int buffer_size = 500;
+    int buffer_size = 50;
     char buffer[buffer_size];
     
     
@@ -168,6 +168,7 @@ int main(int argc, char *argv[])
 
     thread first(listen_to_ack, socketfd, recv_window);
 
+
     
 while(buffer_size != 0){
 
@@ -176,6 +177,7 @@ while(buffer_size != 0){
     start = 0;
     end = window_size - 1;
     int i = 0;
+    buffer_index = 0;
     
 
 
@@ -183,8 +185,9 @@ while(buffer_size != 0){
         fill_window(window, buffer, seq_range, &current_seq, shift_index, &buffer_index, window_size);
 
         while(shift_index > 0){
-        i = (end + 1) - shift_index;
-        cout << buffer_index << endl;
+            cout << ": " << end << endl;
+        i = (window_size) - shift_index;
+        cout << "sequence Number: " << ntohl(window[i].seq_num) << " Data: " << window[i].data << endl;
         sendto(socketfd, (struct packet*)&window[i], sizeof(window[i]), 0, 
                                 (const struct sockaddr *) &client_addr, sizeof(client_addr));
         shift_index--;
@@ -199,8 +202,9 @@ while(buffer_size != 0){
         if(recv_flag){
             
             if (recv_data.first == "ack"){
-                    recv_window[recv_data.second - start - 1].recieved = true;
-                    cout << "ack " << recv_data.second << " recieved..." << endl;
+                    // cout << recv_data.second << " Bro " << start << " Bro "<<  endl;
+                    recv_window[recv_data.second - start].recieved = true;
+                    // cout << "ack " << recv_data.second << " recieved..." << endl;
 
             } else {
                      sendto(socketfd, (struct packet*)&window[recv_data.second], sizeof(window[recv_data.second]), 0, 
@@ -208,12 +212,14 @@ while(buffer_size != 0){
                      cout << "A nak for packet " << recv_data.second << " recieved..." << endl;
 
             }
-            
+            recv_flag = false;
             cv.notify_all();
         }
+        // cout << recv_flag << endl;
         lck.unlock();
 
         shift_index = slidingCheck(recv_window, window_size);
+         
 
         check(&start,&end,shift_index, seq_range);
 
@@ -231,6 +237,7 @@ while(buffer_size != 0){
 }
 
 bool fill_window(packet window[], char buffer[], int seq_range, int* current_seq, int shift_index, int* buffer_index, int size) {
+     
     int i = size - shift_index;
      while(i != size){
         window[i].seq_num = htonl(*current_seq);
@@ -240,14 +247,14 @@ bool fill_window(packet window[], char buffer[], int seq_range, int* current_seq
         *current_seq = *current_seq + 1;
         *buffer_index = *buffer_index + 1;
 
-        if(*buffer_index >= sizeof(buffer)){
+        if(*buffer_index >= 50){
             *buffer_index = -1;
-            return false;
         }
 
 
-
+        
         if(*current_seq >= seq_range){
+            cout << seq_range << " - " << *current_seq << " - " << shift_index << " - " << *buffer_index << " - " << size << endl;
             *current_seq = 0;
         }
     }
@@ -277,7 +284,7 @@ void listen_to_ack(int socketfd, rec_send recv_window[]){
 
      cv.wait(lck);
 
-     recv_flag = false;
+     
 
 
     }
@@ -338,17 +345,21 @@ int slidingCheck(rec_send recv_window[], int size) {
 
 
 bool check(int* start, int* end, int shift_index, int seq_range){
+    int temp1 = *start;
+    int temp2 = *end;
+    *start = temp1 + shift_index;
+    *end = temp2 + shift_index;
 
-    *start = *start + shift_index;
-    *end = *end + shift_index;
-
-    if(*start > (seq_range -1 )) {
-        *start = *start - seq_range;
+    if(*start > (seq_range - 1 )) {
+        *start = temp1 + shift_index - seq_range;
     }
 
-     if(*end > (seq_range -1)){
-         *end = *end -seq_range;
+     if(*end > (seq_range - 1)){
+         *end = temp2 + shift_index -seq_range;
      }
+
+
+     return true;
 
 
 
