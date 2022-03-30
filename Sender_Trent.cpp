@@ -199,10 +199,11 @@ while(buffer_size != 0){
 
 
         unique_lock<mutex> lck(mtx);
-        if(recv_flag){
+        if(recv_flag){  //while loop
             
             if (recv_data.first == "ack"){
                     // cout << recv_data.second << " Bro " << start << " Bro "<<  endl;
+                    // Use formula for find_index in Reciever, for insertion
                     recv_window[recv_data.second - start].recieved = true;
                     // cout << "ack " << recv_data.second << " recieved..." << endl;
 
@@ -217,6 +218,9 @@ while(buffer_size != 0){
         }
         // cout << recv_flag << endl;
         lck.unlock();
+
+
+        // if shift_index is 0, skip check and shiftWindow
 
         shift_index = slidingCheck(recv_window, window_size);
          
@@ -236,6 +240,8 @@ while(buffer_size != 0){
     return 0;
 }
 
+
+// put while loop in main, and split this function up into multiple
 bool fill_window(packet window[], char buffer[], int seq_range, int* current_seq, int shift_index, int* buffer_index, int size) {
      
     int i = size - shift_index;
@@ -247,6 +253,7 @@ bool fill_window(packet window[], char buffer[], int seq_range, int* current_seq
         *current_seq = *current_seq + 1;
         *buffer_index = *buffer_index + 1;
 
+        // memset buffer and read next part of file into it, also reset buffer_index
         if(*buffer_index >= 50){
             *buffer_index = -1;
         }

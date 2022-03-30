@@ -139,7 +139,7 @@ while(z != 1){
 
     
 
-
+    // if return value of slidingcheck is 0, skip check, write, and shift
     shift_index = slidingCheck(recv_window, window_size);
 
     check(&start,&end,shift_index, seq_range);
@@ -164,7 +164,7 @@ while(z != 1){
 MyFile.close();
     return 0;
 }
-
+// check if buffer is full, if so, write into file, and memset buffer, and also reset buffer_index
 int write_into_buffer(packet window[], char buffer[], int* buffer_index,int shift_index) {
     int i = 0;
     cout << "shift_index: " << shift_index << endl;
@@ -175,6 +175,15 @@ int write_into_buffer(packet window[], char buffer[], int* buffer_index,int shif
         *buffer_index = *buffer_index + 1;
     } 
     return 1 ;
+}
+
+// for this method, check return. if its negative or if its greater than end, its a past value
+int findIndex(int start, int end, int seq_num, int seq_range) {
+    if(start < end || seq_num > end) {
+            return seq_num - start;
+        } else {
+           return seq_range - start + seq_num;
+        }
 }
 
 
