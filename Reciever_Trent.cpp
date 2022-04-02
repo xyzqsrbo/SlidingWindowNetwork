@@ -23,14 +23,21 @@ Write your code in this editor and press "Run" button to compile and execute it.
 #include <netdb.h>
 #include <array>
 #include <fstream>
-
+#include <vector>
 using namespace std;
 
 struct packet {
-   
-   int seq_num;
-   int data_size;
-   char data;
+    int ip = 0;
+    int data_size;
+    int checksum = 0;
+    int seq_num;
+    int time_sent = 0;
+};
+
+struct state {
+    int seq_range;
+    int file_size;
+    int packet_size;
 };
 
 struct ack {
@@ -42,13 +49,14 @@ mutex mtx;
 
 condition_variable seq_alert;
 condition_variable ack_alert;
-packet incoming;
+buffer incoming[64000];
 ack ack;
+
 
 bool ack_flag = false;
 
 
-int write_into_buffer(packet window[], char buffer[],int* buffer_index,int shift_index);
+int write_into_buffer(packet window[] , ostream& MyFile, int shift_index);
 
 int slidingCheck(bool recv_window[], int size);
 
@@ -69,8 +77,9 @@ int main(int argc, char *argv[])
     struct sockaddr_in server_addr;
     struct sockaddr_in client_addr;
     const int window_size = 4;
-    const int seq_range = 8;
-    char buffer[500];
+    int seq_range = 0;
+    int packet_size = 0;
+    
     packet window[window_size];
     bool recv_window[window_size];
     int start;
@@ -81,7 +90,9 @@ int main(int argc, char *argv[])
     int begin = 0;
     int current_seq = 0;
     int i = 0;
-    int file_size = 50;
+    int file_size = 0;
+    int data_written = 0;
+	
     ofstream MyFile("stupid.txt");
     
     socklen_t length;
@@ -99,33 +110,69 @@ int main(int argc, char *argv[])
     client_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     client_addr.sin_family = AF_INET;
     client_addr.sin_port = htons(1065);
-    
+    state setup;
+    int check = htonl(1);
+
     
     if (bind(socketfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) 
               perror("ERROR on binding");
+
+    cout << "Waiting for initial packet" << endl;
+    recvfrom(socketfd,(struct state*)&setup,sizeof(setup),0, NULL, NULL);
+    seq_range = ntohl(setup.seq_range);
+    file_size = ntohl(setup.file_size);
+    packet_size = ntohl(setup.packet_size);
+
+    char incoming_buffer[packet_size + struct_size(window[0])];
+
+    cout << "initial packet recieved" << endl;
+    cout << " Seq_range: " << seq_range << "file_size: " << file_size << "packet_size: " << packet_size << endl;
+    char buffer[window_size][packet_size + struct_size(window[0])];
+     sendto(socketfd, &check, sizeof(check), 0, 
+                                (const struct sockaddr *) &client_addr, sizeof(client_addr));
+
 
 
 
 thread first(listen_for_packets, window, recv_window, socketfd);
 
-int z = 0;
-while(z != 1){
+int j = 0;
+while(data_written < file_size){
 
     start = 0;
     end = window_size - 1;
 
-    while(buffer_index < sizeof(buffer)){
+    while(j != window_size){
+        // update sliding window method use here - 
         shift_index = 0;
         printf("%s", buffer);
 
     while(!ack_flag){};
+
+    findIndex(int start, int end, int seq_num, int seq_range);
+
+    serialize();
+
+    place_into_window(window, recv_window, seq_range, start, end, ack.seq_num);
+
+    read_into_buffer()
+
+
+
+
+
+
+    
+
+
+
 
 
 
 
     unique_lock<mutex> lck(mtx);
 
-    place_into_window(window, recv_window, seq_range, start, end, ack.seq_num);
+   
 
     cout << ack.seq_num << "Bro" << endl;
 
@@ -144,7 +191,7 @@ while(z != 1){
 
     check(&start,&end,shift_index, seq_range);
 
-    write_into_buffer(window,buffer, &buffer_index, shift_index);
+    write_into_buffer(window, MyFile, shift_index);
 
     shiftWindow(recv_window, window, shift_index, window_size);
 
@@ -157,7 +204,7 @@ while(z != 1){
     
 
     }
-    z++;
+    j++;
     
 
 }
@@ -165,14 +212,15 @@ MyFile.close();
     return 0;
 }
 // check if buffer is full, if so, write into file, and memset buffer, and also reset buffer_index
-int write_into_buffer(packet window[], char buffer[], int* buffer_index,int shift_index) {
+int write_into_buffer(char buffer[],int buffer_size, int packet_size) {
     int i = 0;
     cout << "shift_index: " << shift_index << endl;
-     while(i != shift_index){
-        buffer[*buffer_index] = window[i].data;
+     while(i != buffer_size){
+         while(j != packet_size) {
+             MyFile.write(buffer, sizeof(window[i].data.at(j)));
+             j++;
+         }
         i++;
-        cout <<" data: " << buffer[*buffer_index] << endl;
-        *buffer_index = *buffer_index + 1;
     } 
     return 1 ;
 }
@@ -207,15 +255,19 @@ bool place_into_window(packet window[], bool recv_window[], int seq_range, int s
 
 
 int listen_for_packets(packet window[], bool recv_window[], int socketfd){
-
+    cout << "Thread On" << endl;
     while(1) {
 
 
-     recvfrom(socketfd,(struct packet*)&incoming,sizeof(incoming),0, NULL, NULL);
+     recvfrom(socketfd,incoming,sizeof(incoming),0, NULL, NULL);
 
 
 
-     cout << "boogie woogie " << incoming.data << endl;
+     
+
+    cout << "hello world" << endl;
+
+    
 
 
 
@@ -224,9 +276,6 @@ int listen_for_packets(packet window[], bool recv_window[], int socketfd){
 
 
     unique_lock<mutex> lck(mtx);
-     ack.seq_num = ntohl(incoming.seq_num);
-
-     ack.nak = false;
 
 
 
@@ -281,4 +330,71 @@ bool check(int* start, int* end, int shift_index, int seq_range){
     }
     return 0;
 
+}
+
+
+
+
+int struct_size(packet packet) {
+    int size = 0;
+    int += sizeof(packet.ip);
+    int += sizeof(packet.data_size);
+    int += sizeof(packet.checksum);
+    int += sizeof(packet.seq_num);
+    int += sizeof(packet.time_sent);
+    return size;
+}
+
+int struct_size(state packet) {
+    int size = 0;
+    int += sizeof(packet.seq_range);
+    int += sizeof(packet.file_size);
+    int += sizeof(packet.packet_size);
+    return size;
+}
+
+int file_size(ifstream& file){
+    int file_size = 0;
+    file.seekg(0, ios_base::end);
+    file_size = file.tellg();
+    file.clear();
+    file.seekg(0);
+    return file_size;
+}
+
+int write_into_file(ifstream& file, char buffer[][], int packet_size, int window_size, int file_size){
+    int i =0;
+    while(i != window_size) {
+        file.write(buffer[i], packet_size);
+        if(file.tellg() >= file_size) {
+            break;
+        }
+        i++;
+    }
+
+    return i;
+}
+
+int serialize(char buffer[], packet window, int buffer_size, int packet_size) {
+    
+    memcpy(&window.seq_num,buffer + packet_size , sizeof(window.seq_num));
+    memcpy(&window.data_size, buffer + packet_size + sizeof(window.seq_num), sizeof(window.data_size));
+    return 0;
+}
+bool update_sliding_window(packet window[], int seq_range, int* current_seq, int shift_index, int window_size, int packet_size) {
+    int i = window_size - shift_index;
+
+    while(i != window_size) {
+        window[i].seq_num = htonl(*current_seq);
+        window[i].data_size = htonl(packet_size);
+
+        if(*current_seq >= seq_range) {
+            current_seq = 0;
+        }
+        *current_packet += 1;
+        i++;
+    }
+     
+bool     
+    return true;
 }

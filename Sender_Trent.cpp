@@ -22,6 +22,8 @@ Write your code in this editor and press "Run" button to compile and execute it.
 #include <string>
 #include <netdb.h>
 #include <array>
+#include <vector>
+#include <fstream>
 using namespace std;
 
 mutex mtx;
@@ -35,10 +37,20 @@ data_size - size of data
 data - data to be sent
 */
 struct packet {
-   int seq_num;
-   int data_size;
-   char data;
+
+    int ip = 0;
+    int data_size;
+    int checksum = 0;
+    int seq_num;
+    int time_sent = 0;
+
 };
+
+struct state {
+    int seq_range;
+    int file_size;
+    int packet_size;
+}
 
 
 /* struct for recieving acknowledgements from reciever
@@ -80,6 +92,8 @@ int shiftWindow(rec_send recv_window[], packet window[],  int index, int size);
 int print_packet(packet window[], bool all, int index);
 
 void listen_to_ack(int socketfd,rec_send recv_window[]);
+
+int load_data(packet window[], FILE * fp, int packet_size, int window_index);
 
 
 
@@ -131,25 +145,38 @@ int main(int argc, char *argv[])
     server_addr.sin_port = htons(1065);
 
     
-    int buffer_size = 50;
-    char buffer[buffer_size];
-    
     
     const int window_size = 4;
     const int seq_range = 8;
+    int packet_size = 3;
+     int shift_index = 4;
     packet window[window_size];
+    char buffer[window_size][packet_size + struct_size(window[0])];
     rec_send recv_window[window_size];
-    int start;
-    int end;
+    int check =0;
+
+   
     int current_packet = 0;
     int buffer_index = 0;
-    int shift_index = 4;
-    int begin = 0;
+    
+    int start;
+    int end;
     int current_seq = 0;
+    
+
+
+    ifstream file;
+    file.open ("test.txt");
+    int file_size = file_size(file);
 
 
 
-    FILE * fp = fopen("test.txt", "r");
+    state setup = {seq_range, file_size, packet_size};
+
+    
+
+
+
     socketfd =  socket(AF_INET, SOCK_DGRAM, 0);
      if (socketfd < 0) 
         perror("ERROR opening socket");
@@ -160,20 +187,31 @@ int main(int argc, char *argv[])
     if (bind(socketfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) 
               perror("ERROR on binding");
 
-
-    buffer_size = fread(buffer, 1, sizeof(buffer), fp);
-
    
+    if((sendto(socketfd, (struct state*)&setup, sizeof(setup), 0, 
+                                (const struct sockaddr *) &client_addr, sizeof(client_addr))) <0) {
+                                    perror("ERROR on initial Sending")
+                                };
+
+    recvfrom(socketfd, &check ,sizeof(check),0, NULL, NULL);
+    if(check){
+        cout << "Reciever has gotten initial setup" << endl;
+    }
+
     
+
+
+
 
     thread first(listen_to_ack, socketfd, recv_window);
 
 
     
-while(buffer_size != 0){
+
 
     
-
+    file.read(buffer)
+    int data_read = 0;
     start = 0;
     end = window_size - 1;
     int i = 0;
@@ -181,14 +219,17 @@ while(buffer_size != 0){
     
 
 
-    while(buffer_index != -1 ) {
-        fill_window(window, buffer, seq_range, &current_seq, shift_index, &buffer_index, window_size);
+    while(data_read = read_into_buffer(file, buffer, window_size, packet_size), data_read != 0) {
+
+        while(i != data_read){
+
+
 
         while(shift_index > 0){
             cout << ": " << end << endl;
         i = (window_size) - shift_index;
-        cout << "sequence Number: " << ntohl(window[i].seq_num) << " Data: " << window[i].data << endl;
-        sendto(socketfd, (struct packet*)&window[i], sizeof(window[i]), 0, 
+        serialize(buffer[i], window[i], data_read, packet_size);
+        sendto(socketfd, buffer[i], sizeof(buffer[i]), 0, 
                                 (const struct sockaddr *) &client_addr, sizeof(client_addr));
         shift_index--;
         recv_window[i].sent = true;
@@ -208,9 +249,6 @@ while(buffer_size != 0){
                     // cout << "ack " << recv_data.second << " recieved..." << endl;
 
             } else {
-                     sendto(socketfd, (struct packet*)&window[recv_data.second], sizeof(window[recv_data.second]), 0, 
-                                (const struct sockaddr *) &client_addr, sizeof(client_addr));
-                     cout << "A nak for packet " << recv_data.second << " recieved..." << endl;
 
             }
             recv_flag = false;
@@ -228,11 +266,11 @@ while(buffer_size != 0){
         check(&start,&end,shift_index, seq_range);
 
         shiftWindow(recv_window, window, shift_index, window_size);
+        }
 
     }    
-    buffer_size =  fread(buffer, 1, (sizeof(buffer)), fp);
 
-}
+
     
     
     
@@ -242,30 +280,38 @@ while(buffer_size != 0){
 
 
 // put while loop in main, and split this function up into multiple
-bool fill_window(packet window[], char buffer[], int seq_range, int* current_seq, int shift_index, int* buffer_index, int size) {
-     
-    int i = size - shift_index;
-     while(i != size){
+bool update_sliding_window(packet window[], int seq_range, int* current_seq, int shift_index, int window_size, int packet_size) {
+    int i = window_size - shift_index;
+
+    while(i != window_size) {
         window[i].seq_num = htonl(*current_seq);
-        window[i].data_size = htonl(1);
-        window[i].data = buffer[*buffer_index];
+        window[i].data_size = htonl(packet_size);
+
+        if(*current_seq >= seq_range) {
+            current_seq = 0;
+        }
+        *current_packet += 1;
         i++;
-        *current_seq = *current_seq + 1;
-        *buffer_index = *buffer_index + 1;
-
-        // memset buffer and read next part of file into it, also reset buffer_index
-        if(*buffer_index >= 50){
-            *buffer_index = -1;
-        }
-
-
-        
-        if(*current_seq >= seq_range){
-            cout << seq_range << " - " << *current_seq << " - " << shift_index << " - " << *buffer_index << " - " << size << endl;
-            *current_seq = 0;
-        }
     }
+     
+    
     return true;
+}
+
+int load_data(packet window[], FILE * fp, int packet_size, int window_index) {
+    int i = 0;
+    char* buffer;
+    int total_bytes = 0;
+    int read_success = 1;
+    while (i != packet_size && read_success != 0) {
+        read_success = fread(buffer, 1, sizeof(buffer), fp);
+        window[window_index].data.push_back(*buffer);
+        i++;
+        total_bytes = total_bytes + read_success;
+    }
+
+    return total_bytes;
+
 }
 
 
@@ -308,13 +354,13 @@ int print_packet(packet window[], bool all, int index, int size){
         for(int i =0; i < size; i++){
             cout << "Seq Number: " << window[i].seq_num << "\n";
             cout << "Data_Size: " << window[i].data_size << "\n";
-            cout << "Data: " << window[i].data << "\n";
+            
 
         }
     } else {
         cout << "Seq Number: " << window[index].seq_num << "\n";
         cout << "Data_Size: " << window[index].data_size << "\n";
-        cout << "Data: " << window[index].data << "\n";
+      
     }
 }
 
@@ -371,6 +417,56 @@ bool check(int* start, int* end, int shift_index, int seq_range){
 
 
     
+}
+
+
+
+
+
+int struct_size(packet packet) {
+    int size = 0;
+    int += sizeof(packet.ip);
+    int += sizeof(packet.data_size);
+    int += sizeof(packet.checksum);
+    int += sizeof(packet.seq_num);
+    int += sizeof(packet.time_sent);
+    return size;
+}
+
+int struct_size(state packet) {
+    int size = 0;
+    int += sizeof(packet.seq_range);
+    int += sizeof(packet.file_size);
+    int += sizeof(packet.packet_size);
+    return size;
+}
+
+int file_size(ifstream& file){
+    int file_size = 0;
+    file.seekg(0, ios_base::end);
+    file_size = file.tellg();
+    file.clear();
+    file.seekg(0);
+    return file_size;
+}
+
+int read_into_buffer(ifstream& file, char buffer[][], int packet_size, int window_size){
+    int i =0;
+    while(i != window_size) {
+        file.read(buffer[i], packet_size);
+        if(!file.gcount()) {
+            break;
+        }
+        i++;
+    }
+
+    return i;
+}
+
+int serialize(char buffer[], packet window, int buffer_size, int packet_size) {
+    memcpy(buffer + packet_size, &window.seq_num, sizeof(window.seq_num));
+    memcpy(buffer + packet_size + sizeof(window.seq_num), &window.data_size, sizeof(window.data_size));
+    return 0;
 }
 
 
