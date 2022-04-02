@@ -50,7 +50,6 @@ mutex mtx;
 condition_variable seq_alert;
 condition_variable ack_alert;
 buffer incoming[64000];
-ack ack;
 
 
 bool ack_flag = false;
@@ -92,6 +91,7 @@ int main(int argc, char *argv[])
     int i = 0;
     int file_size = 0;
     int data_written = 0;
+    packet temp;
 	
     ofstream MyFile("stupid.txt");
     
@@ -111,6 +111,7 @@ int main(int argc, char *argv[])
     client_addr.sin_family = AF_INET;
     client_addr.sin_port = htons(1065);
     state setup;
+    ack ack;
     int check = htonl(1);
 
     
@@ -149,23 +150,17 @@ while(data_written < file_size){
 
     while(!ack_flag){};
 
-    findIndex(int start, int end, int seq_num, int seq_range);
-
-    serialize();
-
-    place_into_window(window, recv_window, seq_range, start, end, ack.seq_num);
-
-    read_into_buffer()
 
 
 
+    int serialize(incoming, temp , packet_size);
 
 
+    array_index = findIndex( start, end, ntohl(temp.seq_num), seq_range);
 
-    
-
-
-
+    window[array_index] = temp;
+    recv_window[array_index] = true;
+    write_into_buffer(buffer, packet_size, array_index);
 
 
 
@@ -177,6 +172,7 @@ while(data_written < file_size){
     cout << ack.seq_num << "Bro" << endl;
 
     ack.seq_num = htonl(ack.seq_num);
+    ack.nak = false;
 
     
 
@@ -212,17 +208,15 @@ MyFile.close();
     return 0;
 }
 // check if buffer is full, if so, write into file, and memset buffer, and also reset buffer_index
-int write_into_buffer(char buffer[],int buffer_size, int packet_size) {
-    int i = 0;
+int write_into_buffer(char buffer[][], int packet_size, int array_index) {
+    int j = 0;
     cout << "shift_index: " << shift_index << endl;
-     while(i != buffer_size){
          while(j != packet_size) {
-             MyFile.write(buffer, sizeof(window[i].data.at(j)));
+             buffer[array_index][j] = incoming[j];
              j++;
          }
-        i++;
-    } 
-    return 1 ;
+     
+    return 1;
 }
 
 // for this method, check return. if its negative or if its greater than end, its a past value
@@ -263,7 +257,7 @@ int listen_for_packets(packet window[], bool recv_window[], int socketfd){
 
 
 
-     
+
 
     cout << "hello world" << endl;
 
