@@ -95,6 +95,8 @@ void listen_to_ack(int socketfd,rec_send recv_window[]);
 
 int load_data(packet window[], FILE * fp, int packet_size, int window_index);
 
+int findIndex(int start, int end, int seq_num, int seq_range);
+
 
 
 
@@ -298,21 +300,6 @@ bool update_sliding_window(packet window[], int seq_range, int* current_seq, int
     return true;
 }
 
-int load_data(packet window[], FILE * fp, int packet_size, int window_index) {
-    int i = 0;
-    char* buffer;
-    int total_bytes = 0;
-    int read_success = 1;
-    while (i != packet_size && read_success != 0) {
-        read_success = fread(buffer, 1, sizeof(buffer), fp);
-        window[window_index].data.push_back(*buffer);
-        i++;
-        total_bytes = total_bytes + read_success;
-    }
-
-    return total_bytes;
-
-}
 
 
 void listen_to_ack(int socketfd, rec_send recv_window[]){
@@ -379,6 +366,15 @@ int shiftWindow(rec_send recv_window[], packet window[],  int index, int size){
     }
     return 0;
 
+}
+
+
+int findIndex(int start, int end, int seq_num, int seq_range) {
+    if(start < end || seq_num > end) {
+            return seq_num - start;
+        } else {
+           return seq_range - start + seq_num;
+        }
 }
 
 

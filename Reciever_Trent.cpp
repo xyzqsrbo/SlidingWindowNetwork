@@ -1,10 +1,3 @@
-/******************************************************************************
-
-                              Online C++ Compiler.
-               Code, Compile, Run and Debug C++ program online.
-Write your code in this editor and press "Run" button to compile and execute it.
-
-*******************************************************************************/
 
 #include <iostream>
 #include <stdlib.h>
@@ -124,11 +117,18 @@ int main(int argc, char *argv[])
     file_size = ntohl(setup.file_size);
     packet_size = ntohl(setup.packet_size);
 
-    char incoming_buffer[packet_size + struct_size(window[0])];
 
     cout << "initial packet recieved" << endl;
     cout << " Seq_range: " << seq_range << "file_size: " << file_size << "packet_size: " << packet_size << endl;
+
+
+
+
     char buffer[window_size][packet_size + struct_size(window[0])];
+
+
+
+
      sendto(socketfd, &check, sizeof(check), 0, 
                                 (const struct sockaddr *) &client_addr, sizeof(client_addr));
 
@@ -186,8 +186,6 @@ while(data_written < file_size){
     shift_index = slidingCheck(recv_window, window_size);
 
     check(&start,&end,shift_index, seq_range);
-
-    write_into_buffer(window, MyFile, shift_index);
 
     shiftWindow(recv_window, window, shift_index, window_size);
 
@@ -335,7 +333,10 @@ int struct_size(packet packet) {
     int += sizeof(packet.data_size);
     int += sizeof(packet.checksum);
     int += sizeof(packet.seq_num);
-    int += sizeof(packet.time_sent);
+    int += sizeof(packet.time_sent);\
+
+
+
     return size;
 }
 
