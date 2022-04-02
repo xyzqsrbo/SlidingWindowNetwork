@@ -36,6 +36,16 @@ seq_num - sequence number of data
 data_size - size of data
 data - data to be sent
 */
+
+//global variables for user input
+string protocol;
+int packetSize;
+string timeoutInterval;
+int windowSize;
+int rangeStart;
+int rangeEnd;
+string errors;
+
 struct packet {
 
     int ip = 0;
@@ -95,7 +105,7 @@ void listen_to_ack(int socketfd,rec_send recv_window[]);
 
 int load_data(packet window[], FILE * fp, int packet_size, int window_index);
 
-
+void userInput();
 
 
 
@@ -110,7 +120,7 @@ int main(int argc, char *argv[])
     // Initialize socket variables
     
     
-    
+    userInput();
 
 
 
@@ -467,6 +477,37 @@ int serialize(char buffer[], packet window, int buffer_size, int packet_size) {
     memcpy(buffer + packet_size, &window.seq_num, sizeof(window.seq_num));
     memcpy(buffer + packet_size + sizeof(window.seq_num), &window.data_size, sizeof(window.data_size));
     return 0;
+}
+
+void userInput() {
+    char check;
+    cout << "Would you like to use default values? (y/n) ";
+    cin >> check;
+
+    if (check == 'n') {
+      cout << "" << endl;
+
+      cout << "Type of protocol (GBN, SR, or SAW): ";
+      cin >> protocol;
+
+      cout << "Size of packet: ";
+      cin >> packetSize;
+
+      cout << "Timeout interval (US or PC): ";
+      cin >> timeoutInterval;
+
+      cout << "Size of sliding window: ";
+      cin >> windowSize;
+
+      cout << "Range of sequence numbers: ";
+      cin >> rangeStart;
+      cin >> rangeEnd;
+
+      cout << "Situational errrors: ";
+      cin >> errors;
+    } else {
+      //input default values for the above variables to run the program
+    }
 }
 
 
