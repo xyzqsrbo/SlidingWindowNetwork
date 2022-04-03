@@ -171,11 +171,14 @@ int main(int argc, char *argv[])
     
     const int window_size = 4;
     const int seq_range = 8;
-    int packet_size = 6;
+    int packet_size = 1024;
      int shift_index = 4;
     packet window[window_size];
     char **buffer;
     buffer = new char *[window_size];
+
+
+    cout << "struct" << struct_size(window[0]);
     for(int i = 0; i < window_size; i++){
         buffer[i] = new char[packet_size + struct_size(window[0])];
     }
@@ -256,10 +259,10 @@ int main(int argc, char *argv[])
         while(shift_index > 0){
             cout << ": " << end << endl;
         i = (window_size) - shift_index;
-        cout << "seq_num: " << window[i].seq_num << endl;
+        cout << "seq_num: " << window[i].seq_num << "packet_size: " << sizeof(buffer[i]) << endl;
         serialize(buffer[i], window[i], data_read, packet_size);
        
-        sendto(socketfd, buffer[i], sizeof(buffer[i]), 0, 
+        sendto(socketfd, buffer[i], packet_size + struct_size(window[0]), 0, 
                                 (const struct sockaddr *) &client_addr, sizeof(client_addr));
         shift_index--;
         recv_window[i].sent = true;
@@ -397,12 +400,7 @@ int shiftWindow(char* buffer[], rec_send recv_window[], packet window[],  int in
     if(index == 0) return -1;
 
     for(int j =0; j < index; j++) {
-        cout << "buffer: " << *(buffer[j]) << endl;
-        delete[] buffer[j];
-        buffer[j] = new char[23];
-        cout << "fejiefnjifnjiekfefefe" << endl;
-        
-
+      
     }
     
     for(int i =0 ; i < size - index; i++){

@@ -169,7 +169,7 @@ while(data_written < file_size){
 
 
 
-
+    cout << "packet_size: " << packet_size << " window_size: " << endl;
     serialize(&temp, packet_size);
 
     cout << temp.seq_num << "fuck this" << endl;
@@ -329,8 +329,6 @@ bool check(int* start, int* end, int shift_index, int seq_range){
     if(index == 0) return -1;
 
     for(int j =0; j < index; j++) {
-        delete[] buffer[j];
-        buffer[j] = new char[23];
     }
 
 
