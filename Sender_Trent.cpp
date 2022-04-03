@@ -22,6 +22,7 @@ Write your code in this editor and press "Run" button to compile and execute it.
 #include <string>
 #include <netdb.h>
 #include <array>
+#include <chrono>
 using namespace std;
 
 mutex mtx;
@@ -33,11 +34,13 @@ ip - sender ip address
 seq_num - sequence number of data
 data_size - size of data
 data - data to be sent
+sentTime - the time the packet was sent
 */
 struct packet {
    int seq_num;
    int data_size;
    char data;
+   std::chrono::time_point<std::chrono::steady_clock> startTime;
 };
 
 
@@ -94,10 +97,6 @@ void listen_to_ack(int socketfd,rec_send recv_window[]);
 int main(int argc, char *argv[])
 {
     // Initialize socket variables
-    
-    
-    
-
 
 
     /*
@@ -109,7 +108,7 @@ int main(int argc, char *argv[])
     gethostname(ipAddress, sizeof(ipAddress));
     struct hostent *host = gethostbyname(ipAddress);
 
-
+    
     // Declaration of variables for our socket
     int socketfd, port;
     struct sockaddr_in server_addr, client_addr;
@@ -131,7 +130,7 @@ int main(int argc, char *argv[])
     server_addr.sin_port = htons(1065);
 
     
-    int buffer_size = 50;
+    int buffer_size = 4096;
     char buffer[buffer_size];
     
     
@@ -157,11 +156,11 @@ int main(int argc, char *argv[])
     
     
     
-    if (bind(socketfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) 
+    if (::bind(socketfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) 
               perror("ERROR on binding");
 
-
-    buffer_size = fread(buffer, 1, sizeof(buffer), fp);
+cout << "Does this work" << endl; 
+    buffer_size = fread(buffer, 1, sizeof(buffer) + 1, fp);
 
    
     
@@ -169,7 +168,7 @@ int main(int argc, char *argv[])
     thread first(listen_to_ack, socketfd, recv_window);
 
 
-    
+   
 while(buffer_size != 0){
 
     
@@ -183,17 +182,19 @@ while(buffer_size != 0){
 
     while(buffer_index != -1 ) {
         fill_window(window, buffer, seq_range, &current_seq, shift_index, &buffer_index, window_size);
-
+        
         while(shift_index > 0){
             cout << ": " << end << endl;
-        i = (window_size) - shift_index;
-        cout << "sequence Number: " << ntohl(window[i].seq_num) << " Data: " << window[i].data << endl;
-        sendto(socketfd, (struct packet*)&window[i], sizeof(window[i]), 0, 
-                                (const struct sockaddr *) &client_addr, sizeof(client_addr));
-        shift_index--;
-        recv_window[i].sent = true;
-        cout << "Packet " << current_packet << " has been sent..." << endl;
-        current_packet++;
+            i = (window_size) - shift_index;
+            cout << "sequence Number: " << ntohl(window[i].seq_num) << " Data: " << window[i].data << endl;
+            //Set time sent variable to time now
+            window[i].startTime = std::chrono::steady_clock::now();
+            sendto(socketfd, (struct packet*)&window[i], sizeof(window[i]), 0, 
+                                    (const struct sockaddr *) &client_addr, sizeof(client_addr));
+            shift_index--;
+            recv_window[i].sent = true;
+            cout << "Packet " << current_packet << " has been sent..." << endl;
+            current_packet++;
 
         }
 
@@ -208,6 +209,7 @@ while(buffer_size != 0){
                     // cout << "ack " << recv_data.second << " recieved..." << endl;
 
             } else {
+                    window[recv_data.second].startTime = std::chrono::steady_clock::now();
                      sendto(socketfd, (struct packet*)&window[recv_data.second], sizeof(window[recv_data.second]), 0, 
                                 (const struct sockaddr *) &client_addr, sizeof(client_addr));
                      cout << "A nak for packet " << recv_data.second << " recieved..." << endl;
@@ -228,6 +230,35 @@ while(buffer_size != 0){
         check(&start,&end,shift_index, seq_range);
 
         shiftWindow(recv_window, window, shift_index, window_size);
+
+        cout << "does this happen" << endl;
+
+        for(int inc = 0; inc < shift_index; inc++){
+            int some = (window_size) - shift_index;
+            /* Add sent time variable to packet
+             * Check if (time now - sent time in packet) > timeout -- resend packet
+             * If resent packet set time sent variable to time now
+             */
+            auto epoch = window[some].startTime;
+            auto win_s = std::chrono::time_point_cast<std::chrono::seconds>(epoch);
+            auto value = win_s.time_since_epoch();
+            long windowVal = value.count();
+            cout << "this is windowVal: " << windowVal << endl;
+            double timeout = 8;
+            auto now = std::chrono::steady_clock::now();
+            std::chrono::duration<double> elapsed_seconds;
+            if(windowVal != 0){
+              elapsed_seconds = now - window[some].startTime;  
+            }
+            if(elapsed_seconds.count() > timeout){
+                cout << "A timeout for packet " << window[i].seq_num << " recieved..." << endl;
+                
+                sendto(socketfd, (struct packet*)&window[some], sizeof(window[some]), 0,
+                                        (const struct sockaddr *) &client_addr, sizeof(client_addr));
+            }
+        }
+
+        
 
     }    
     buffer_size =  fread(buffer, 1, (sizeof(buffer)), fp);

@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
     client_addr.sin_port = htons(1065);
     
     
-    if (bind(socketfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) 
+    if (::bind(socketfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) 
               perror("ERROR on binding");
 
 
