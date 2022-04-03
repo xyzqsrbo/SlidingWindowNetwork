@@ -99,7 +99,7 @@ int main(int argc, char *argv[])
     int array_index = 0;
     packet temp;
 	
-    fstream MyFile("stupid.txt", fstream::binary);
+    fstream MyFile("stupid.txt");
     
     socklen_t length;
     
@@ -387,7 +387,7 @@ int write_into_file(fstream& file, char* buffer[], int packet_size, int window_s
         i++;
     }
 
-    return i;
+    return i*packet_size;
 }
 
 int serialize(packet *window, int packet_size) {

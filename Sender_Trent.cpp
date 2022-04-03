@@ -134,8 +134,6 @@ int main(int argc, char *argv[])
 {
     // Initialize socket variables
     
-    
-    userInput();
 
 
 
@@ -173,7 +171,7 @@ int main(int argc, char *argv[])
     
     const int window_size = 4;
     const int seq_range = 8;
-    int packet_size = 100;
+    int packet_size = 6;
      int shift_index = 4;
     packet window[window_size];
     char **buffer;
@@ -196,7 +194,7 @@ int main(int argc, char *argv[])
 
 
     ifstream file;
-    file.open ("test.txt", ifstream::binary);
+    file.open ("testfile");
     int file_size = filesize(file);
 
 
