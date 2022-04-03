@@ -50,7 +50,7 @@ struct state {
     int seq_range;
     int file_size;
     int packet_size;
-}
+};
 
 
 /* struct for recieving acknowledgements from reciever
@@ -76,7 +76,7 @@ struct rec_send {
 
 pair <string, int> recv_data;
 
-bool recv_flag;
+bool recv_flag = false;
 
 
 
@@ -87,7 +87,7 @@ bool check(int* start, int* end, int shift_index, int seq_range);
 
 int slidingCheck(rec_send recv_window[], int size);
 
-int shiftWindow(rec_send recv_window[], packet window[],  int index, int size);
+int shiftWindow(char* buffer[] ,rec_send recv_window[], packet window[],  int index, int size);
 
 int print_packet(packet window[], bool all, int index);
 
@@ -96,6 +96,18 @@ void listen_to_ack(int socketfd,rec_send recv_window[]);
 int load_data(packet window[], FILE * fp, int packet_size, int window_index);
 
 int findIndex(int start, int end, int seq_num, int seq_range);
+
+int read_into_buffer(ifstream& file, char* buffer[], int packet_size, int window_size, int begin);
+
+int filesize(ifstream& file);
+
+int struct_size(state packet);
+
+int struct_size(packet packet);
+
+bool update_sliding_window(packet window[], int seq_range, int* current_seq, int shift_index, int window_size, int packet_size);
+
+int serialize(char buffer[], packet window, int buffer_size, int packet_size);
 
 
 
@@ -150,12 +162,17 @@ int main(int argc, char *argv[])
     
     const int window_size = 4;
     const int seq_range = 8;
-    int packet_size = 3;
+    int packet_size = 100;
      int shift_index = 4;
     packet window[window_size];
-    char buffer[window_size][packet_size + struct_size(window[0])];
+    char **buffer;
+    buffer = new char *[window_size];
+    for(int i = 0; i < window_size; i++){
+        buffer[i] = new char[packet_size + struct_size(window[0])];
+    }
+    
     rec_send recv_window[window_size];
-    int check =0;
+    int checking =0;
 
    
     int current_packet = 0;
@@ -168,12 +185,12 @@ int main(int argc, char *argv[])
 
 
     ifstream file;
-    file.open ("test.txt");
-    int file_size = file_size(file);
+    file.open ("test.txt", ifstream::binary);
+    int file_size = filesize(file);
 
 
 
-    state setup = {seq_range, file_size, packet_size};
+    state setup = {htonl(seq_range), htonl(file_size), htonl(packet_size)};
 
     
 
@@ -191,12 +208,12 @@ int main(int argc, char *argv[])
 
    
     if((sendto(socketfd, (struct state*)&setup, sizeof(setup), 0, 
-                                (const struct sockaddr *) &client_addr, sizeof(client_addr))) <0) {
-                                    perror("ERROR on initial Sending")
-                                };
+                                (const struct sockaddr *) &client_addr, sizeof(client_addr))) <0)
+                                    perror("ERROR on initial Sending");
+                            
 
-    recvfrom(socketfd, &check ,sizeof(check),0, NULL, NULL);
-    if(check){
+    recvfrom(socketfd, &checking ,sizeof(checking),0, NULL, NULL);
+    if(checking){
         cout << "Reciever has gotten initial setup" << endl;
     }
 
@@ -212,25 +229,27 @@ int main(int argc, char *argv[])
 
 
     
-    file.read(buffer)
     int data_read = 0;
     start = 0;
     end = window_size - 1;
     int i = 0;
     buffer_index = 0;
+    int ind = 0;
     
 
+    cout << "begin: " << window_size - shift_index << endl;
+    while(data_read = read_into_buffer(file, buffer, packet_size, window_size , window_size-shift_index), data_read != -1) {
 
-    while(data_read = read_into_buffer(file, buffer, window_size, packet_size), data_read != 0) {
-
-        while(i != data_read){
+            update_sliding_window(window, seq_range, &current_seq, shift_index, window_size, packet_size);
 
 
 
         while(shift_index > 0){
             cout << ": " << end << endl;
         i = (window_size) - shift_index;
+        cout << "seq_num: " << window[i].seq_num << endl;
         serialize(buffer[i], window[i], data_read, packet_size);
+       
         sendto(socketfd, buffer[i], sizeof(buffer[i]), 0, 
                                 (const struct sockaddr *) &client_addr, sizeof(client_addr));
         shift_index--;
@@ -241,13 +260,18 @@ int main(int argc, char *argv[])
         }
 
 
-        unique_lock<mutex> lck(mtx);
-        if(recv_flag){  //while loop
+
+       
+         while(!recv_flag) {};
+
+          unique_lock<mutex> lck(mtx);
+
+          ind=findIndex(start, end, recv_data.second, seq_range);
             
             if (recv_data.first == "ack"){
                     // cout << recv_data.second << " Bro " << start << " Bro "<<  endl;
                     // Use formula for find_index in Reciever, for insertion
-                    recv_window[recv_data.second - start].recieved = true;
+                    recv_window[ind].recieved = true;
                     // cout << "ack " << recv_data.second << " recieved..." << endl;
 
             } else {
@@ -255,22 +279,26 @@ int main(int argc, char *argv[])
             }
             recv_flag = false;
             cv.notify_all();
-        }
+        
         // cout << recv_flag << endl;
-        lck.unlock();
+        
 
 
         // if shift_index is 0, skip check and shiftWindow
+
+        
 
         shift_index = slidingCheck(recv_window, window_size);
          
 
         check(&start,&end,shift_index, seq_range);
 
-        shiftWindow(recv_window, window, shift_index, window_size);
+        cout << "testfinder" << endl;
+        shiftWindow(buffer, recv_window, window, shift_index, window_size);
+        cout << "testfinder5" << endl;
         }
 
-    }    
+       
 
 
     
@@ -286,13 +314,15 @@ bool update_sliding_window(packet window[], int seq_range, int* current_seq, int
     int i = window_size - shift_index;
 
     while(i != window_size) {
+        cout << *current_seq << endl;
         window[i].seq_num = htonl(*current_seq);
         window[i].data_size = htonl(packet_size);
 
+        
+        *current_seq += 1;
         if(*current_seq >= seq_range) {
-            current_seq = 0;
+            *current_seq = 0;
         }
-        *current_packet += 1;
         i++;
     }
      
@@ -354,8 +384,17 @@ int print_packet(packet window[], bool all, int index, int size){
 
 
 
-int shiftWindow(rec_send recv_window[], packet window[],  int index, int size){
+int shiftWindow(char* buffer[], rec_send recv_window[], packet window[],  int index, int size){
     if(index == 0) return -1;
+
+    for(int j =0; j < index; j++) {
+        cout << "buffer: " << *(buffer[j]) << endl;
+        delete[] buffer[j];
+        buffer[j] = new char[23];
+        cout << "fejiefnjifnjiekfefefe" << endl;
+        
+
+    }
     
     for(int i =0 ; i < size - index; i++){
         recv_window[i] = recv_window[i+index];
@@ -363,6 +402,9 @@ int shiftWindow(rec_send recv_window[], packet window[],  int index, int size){
         recv_window[i+index].recieved = false;
         window[i] = window[i+index];
         window[i+index] = {};
+        buffer[i] = buffer[i+index]; 
+
+
     }
     return 0;
 
@@ -421,23 +463,23 @@ bool check(int* start, int* end, int shift_index, int seq_range){
 
 int struct_size(packet packet) {
     int size = 0;
-    int += sizeof(packet.ip);
-    int += sizeof(packet.data_size);
-    int += sizeof(packet.checksum);
-    int += sizeof(packet.seq_num);
-    int += sizeof(packet.time_sent);
+    size += sizeof(packet.ip);
+    size += sizeof(packet.data_size);
+    size += sizeof(packet.checksum);
+    size += sizeof(packet.seq_num);
+    size += sizeof(packet.time_sent);
     return size;
 }
 
 int struct_size(state packet) {
     int size = 0;
-    int += sizeof(packet.seq_range);
-    int += sizeof(packet.file_size);
-    int += sizeof(packet.packet_size);
+    size += sizeof(packet.seq_range);
+    size += sizeof(packet.file_size);
+    size += sizeof(packet.packet_size);
     return size;
 }
 
-int file_size(ifstream& file){
+int filesize(ifstream& file){
     int file_size = 0;
     file.seekg(0, ios_base::end);
     file_size = file.tellg();
@@ -446,12 +488,13 @@ int file_size(ifstream& file){
     return file_size;
 }
 
-int read_into_buffer(ifstream& file, char buffer[][], int packet_size, int window_size){
-    int i =0;
+int read_into_buffer(ifstream& file, char *buffer[], int packet_size, int window_size, int begin){
+    int i = begin;
     while(i != window_size) {
         file.read(buffer[i], packet_size);
+        cout << "fgdjiodfojik" << file.gcount() << endl;
         if(!file.gcount()) {
-            break;
+            return -1;
         }
         i++;
     }
@@ -460,6 +503,7 @@ int read_into_buffer(ifstream& file, char buffer[][], int packet_size, int windo
 }
 
 int serialize(char buffer[], packet window, int buffer_size, int packet_size) {
+    cout << window.seq_num << " " << sizeof(window.seq_num);
     memcpy(buffer + packet_size, &window.seq_num, sizeof(window.seq_num));
     memcpy(buffer + packet_size + sizeof(window.seq_num), &window.data_size, sizeof(window.data_size));
     return 0;
