@@ -1,9 +1,8 @@
+   
 /******************************************************************************
-
                               Online C++ Compiler.
                Code, Compile, Run and Debug C++ program online.
 Write your code in this editor and press "Run" button to compile and execute it.
-
 *******************************************************************************/
 
 #include <iostream>
@@ -24,6 +23,7 @@ Write your code in this editor and press "Run" button to compile and execute it.
 #include <array>
 #include <vector>
 #include <fstream>
+#include <chrono>
 using namespace std;
 
 mutex mtx;
@@ -52,7 +52,7 @@ struct packet {
     int data_size;
     int checksum = 0;
     int seq_num;
-    int time_sent = 0;
+    std::chrono::time_point<std::chrono::steady_clock> time_sent;
 
 };
 
@@ -73,7 +73,6 @@ bool nak;
 };
 
 /* our sl
-
 */
 
 
@@ -202,7 +201,7 @@ int main(int argc, char *argv[])
 
 
 
-    state setup = {htonl(seq_range), htonl(file_size), htonl(packet_size)};
+    state setup = {htonl(seq_range), (int)htonl(file_size), (int)htonl(packet_size)};
 
     
 
@@ -215,13 +214,19 @@ int main(int argc, char *argv[])
     
     
     
-    if (bind(socketfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) 
+    if (::bind(socketfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) 
               perror("ERROR on binding");
 
    
     if((sendto(socketfd, (struct state*)&setup, sizeof(setup), 0, 
-                                (const struct sockaddr *) &client_addr, sizeof(client_addr))) <0)
+                                (const struct sockaddr *) &client_addr, sizeof(client_addr))) <0){
                                     perror("ERROR on initial Sending");
+                                    int fail = 0;
+                                    do{
+                                        fail = sendto(socketfd, (struct state*)&setup, sizeof(setup), 0, 
+                                            (const struct sockaddr *) &client_addr, sizeof(client_addr));
+                                    }while(fail < 0);
+    }
                             
 
     recvfrom(socketfd, &checking ,sizeof(checking),0, NULL, NULL);
@@ -249,7 +254,7 @@ int main(int argc, char *argv[])
     int ind = 0;
     
 
-    cout << "begin: " << window_size - shift_index << endl;
+    
     while(data_read = read_into_buffer(file, buffer, packet_size, window_size , window_size-shift_index), data_read != -1) {
 
             update_sliding_window(window, seq_range, &current_seq, shift_index, window_size, packet_size);
@@ -259,7 +264,7 @@ int main(int argc, char *argv[])
         while(shift_index > 0){
             cout << ": " << end << endl;
         i = (window_size) - shift_index;
-        cout << "seq_num: " << window[i].seq_num << "packet_size: " << sizeof(buffer[i]) << endl;
+        cout << "seq_num: " << ntohl(window[i].seq_num) << endl;
         serialize(buffer[i], window[i], data_read, packet_size);
        
         sendto(socketfd, buffer[i], packet_size + struct_size(window[0]), 0, 
@@ -305,9 +310,9 @@ int main(int argc, char *argv[])
 
         check(&start,&end,shift_index, seq_range);
 
-        cout << "testfinder" << endl;
+        
         shiftWindow(buffer, recv_window, window, shift_index, window_size);
-        cout << "testfinder5" << endl;
+    
         }
 
        
@@ -499,7 +504,7 @@ int read_into_buffer(ifstream& file, char *buffer[], int packet_size, int window
     int i = begin;
     while(i != window_size) {
         file.read(buffer[i], packet_size);
-        cout << "fgdjiodfojik" << file.gcount() << endl;
+        
         if(!file.gcount()) {
             return -1;
         }
@@ -510,7 +515,7 @@ int read_into_buffer(ifstream& file, char *buffer[], int packet_size, int window
 }
 
 int serialize(char buffer[], packet window, int buffer_size, int packet_size) {
-    cout << window.seq_num << " " << sizeof(window.seq_num);
+   
     memcpy(buffer + packet_size, &window.seq_num, sizeof(window.seq_num));
     memcpy(buffer + packet_size + sizeof(window.seq_num), &window.data_size, sizeof(window.data_size));
     return 0;
@@ -546,7 +551,3 @@ void userInput() {
       //input default values for the above variables to run the program
     }
 }
-
-
-
-
