@@ -121,7 +121,7 @@ int main(int argc, char *argv[])
     int checking = htonl(1);
 
     
-    if (bind(socketfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) 
+    if (::bind(socketfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) 
               perror("ERROR on binding");
 
     cout << "Waiting for initial packet" << endl;

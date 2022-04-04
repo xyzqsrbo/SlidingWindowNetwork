@@ -24,6 +24,7 @@ Write your code in this editor and press "Run" button to compile and execute it.
 #include <array>
 #include <vector>
 #include <fstream>
+#include <chrono>
 using namespace std;
 
 mutex mtx;
@@ -52,7 +53,7 @@ struct packet {
     int data_size;
     int checksum = 0;
     int seq_num;
-    int time_sent = 0;
+    std::chrono::time_point<std::chrono::steady_clock> time_sent;
 
 };
 
@@ -197,12 +198,12 @@ int main(int argc, char *argv[])
 
 
     ifstream file;
-    file.open ("testfile");
+    file.open ("50MbTest");
     int file_size = filesize(file);
 
 
 
-    state setup = {htonl(seq_range), htonl(file_size), htonl(packet_size)};
+    state setup = {htonl(seq_range), (int)htonl(file_size), (int)htonl(packet_size)};
 
     
 
@@ -215,13 +216,19 @@ int main(int argc, char *argv[])
     
     
     
-    if (bind(socketfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) 
+    if (::bind(socketfd, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) 
               perror("ERROR on binding");
 
    
     if((sendto(socketfd, (struct state*)&setup, sizeof(setup), 0, 
-                                (const struct sockaddr *) &client_addr, sizeof(client_addr))) <0)
+                                (const struct sockaddr *) &client_addr, sizeof(client_addr))) <0){
                                     perror("ERROR on initial Sending");
+                                    int fail = 0;
+                                    do{
+                                        fail = sendto(socketfd, (struct state*)&setup, sizeof(setup), 0, 
+                                            (const struct sockaddr *) &client_addr, sizeof(client_addr));
+                                    }while(fail < 0);
+    }
                             
 
     recvfrom(socketfd, &checking ,sizeof(checking),0, NULL, NULL);
