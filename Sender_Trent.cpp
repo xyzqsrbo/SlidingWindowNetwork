@@ -176,7 +176,7 @@ int main(int argc, char *argv[])
     int current_seq = 0;
 
     ifstream file;
-    file.open("50MbTest");
+    file.open ("testfile");
     int file_size = filesize(file);
 
     state setup = {htonl(seq_range), (int)htonl(file_size), (int)htonl(packet_size)};
@@ -234,6 +234,16 @@ int main(int argc, char *argv[])
                 shift_index--;
                 continue;
             }
+        i = (window_size) - shift_index;
+        cout << "seq_num: " << ntohl(window[i].seq_num) << endl;
+        serialize(buffer[i], window[i], data_read, packet_size);
+       
+        sendto(socketfd, buffer[i], packet_size + struct_size(window[0]), 0, 
+                                (const struct sockaddr *) &client_addr, sizeof(client_addr));
+        shift_index--;
+        recv_window[i].sent = true;
+        cout << "Packet " << current_packet << " has been sent..." << endl;
+        current_packet++;
 
             sendto(socketfd, buffer[i], packet_size + struct_size(window[0]), 0,
                    (const struct sockaddr *)&client_addr, sizeof(client_addr));
@@ -488,9 +498,8 @@ int read_into_buffer(ifstream &file, char *buffer[], int packet_size, int window
     while (i != window_size)
     {
         file.read(buffer[i], packet_size);
-        cout << "fgdjiodfojik" << file.gcount() << endl;
-        if (!file.gcount())
-        {
+        
+        if(!file.gcount()) {
             return -1;
         }
         i++;
@@ -499,9 +508,8 @@ int read_into_buffer(ifstream &file, char *buffer[], int packet_size, int window
     return i;
 }
 
-int serialize(char buffer[], packet window, int buffer_size, int packet_size)
-{
-    cout << window.seq_num << " " << sizeof(window.seq_num);
+int serialize(char buffer[], packet window, int buffer_size, int packet_size) {
+   
     memcpy(buffer + packet_size, &window.seq_num, sizeof(window.seq_num));
     memcpy(buffer + packet_size + sizeof(window.seq_num), &window.data_size, sizeof(window.data_size));
     return 0;
