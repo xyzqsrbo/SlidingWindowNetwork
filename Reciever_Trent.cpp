@@ -147,6 +147,7 @@ int main(int argc, char *argv[])
     while (data_written < file_size)
     {
         int j = 0;
+        int prevIndex = 0;
 
         while (j != window_size)
         {
@@ -167,6 +168,19 @@ int main(int argc, char *argv[])
             cout << "Temp Sequence Num: " << temp.seq_num << endl;
 
             array_index = findIndex(start, end, ntohl(temp.seq_num), seq_range);
+
+            if(array_index < 0){
+                if(prevIndex == window_size - 1){
+                    shift_index = 0;
+                }else{
+                    shift_index = prevIndex + 1;
+                }
+            }else if(array_index > window_size - 1){
+                shift_index = 0;
+            }
+            prevIndex = shift_index;
+
+
             window[array_index] = temp;
             recv_window[array_index] = true;
             write_into_buffer(buffer, MyFile, packet_size, array_index);
@@ -183,6 +197,7 @@ int main(int argc, char *argv[])
 
             // if return value of slidingcheck is 0, skip check, write, and shift
             shift_index = slidingCheck(recv_window, window_size);
+
 
             data_written += write_into_file(MyFile, buffer, packet_size, window_size, file_size, shift_index);
             if (data_written > file_size)
@@ -385,3 +400,5 @@ bool update_sliding_window(packet window[], int seq_range, int *current_seq, int
         i++;
     }
 }
+
+

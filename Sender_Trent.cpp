@@ -229,8 +229,8 @@ int main(int argc, char *argv[])
             // Set time_sent variable to time now
             window[i].time_sent = std::chrono::steady_clock::now();
             serialize(buffer[i], window[i], data_read, packet_size);
-            /*if(window[i].seq_num == 83886080){
-                cout << "Losing packet 83886080" << endl;
+            /*if(window[i].seq_num == 100663296){
+                cout << "Losing packet " << window[i].seq_num << endl;
                 shift_index--;
                 continue;
             }*/
@@ -240,6 +240,39 @@ int main(int argc, char *argv[])
             recv_window[i].sent = true;
             cout << "Packet " << current_packet << " has been sent..." << endl;
             current_packet++;
+        }
+
+        for (int ii = 0; ii < window_size; ii++)
+        {
+            int some = window_size - shift_index;
+            /* Add sent time variable to packet
+             * Check if (time now - sent time in packet) > timeout -- resend packet
+             * If resent packet set time sent variable to time now
+             */
+            auto epoch = window[some].time_sent;
+            auto win_s = std::chrono::time_point_cast<std::chrono::milliseconds>(epoch);
+            auto value = win_s.time_since_epoch();
+            long windowVal = value.count();
+            windowVal;
+            cout << "this is time_send Val: " << windowVal << endl;
+            double timeout = 8 * 1000;
+            auto now = std::chrono::steady_clock::now();
+            std::chrono::duration<double> elapsed_seconds;
+            if (windowVal != 0)
+            {
+                elapsed_seconds = now - window[some].time_sent;
+                cout << "Elapsed Seconds of window: " << elapsed_seconds.count() << endl;
+            }
+            if (elapsed_seconds.count() > timeout)
+            {
+                cout << "A timeout for packet " << window[some].seq_num << " recieved..." << endl;
+
+                window[i].time_sent = std::chrono::steady_clock::now();
+                serialize(buffer[i], window[i], data_read, packet_size);
+
+                sendto(socketfd, buffer[i], packet_size + struct_size(window[0]), 0,
+                       (const struct sockaddr *)&client_addr, sizeof(client_addr));
+            }
         }
 
         while (!recv_flag)
@@ -273,36 +306,7 @@ int main(int argc, char *argv[])
 
         shiftWindow(buffer, recv_window, window, shift_index, window_size);
 
-        for (int ii = 1; ii <= shift_index; ii++)
-        {
-            int some = window_size - shift_index;
-            /* Add sent time variable to packet
-             * Check if (time now - sent time in packet) > timeout -- resend packet
-             * If resent packet set time sent variable to time now
-             */
-            auto epoch = window[some].time_sent;
-            auto win_s = std::chrono::time_point_cast<std::chrono::seconds>(epoch);
-            auto value = win_s.time_since_epoch();
-            long windowVal = value.count();
-            cout << "this is windowVal: " << windowVal << endl;
-            double timeout = 8 * 100000;
-            auto now = std::chrono::steady_clock::now();
-            std::chrono::duration<double> elapsed_seconds;
-            if (windowVal != 0)
-            {
-                elapsed_seconds = now - window[some].time_sent;
-            }
-            if (elapsed_seconds.count() > timeout)
-            {
-                cout << "A timeout for packet " << window[some].seq_num << " recieved..." << endl;
-
-                window[i].time_sent = std::chrono::steady_clock::now();
-                serialize(buffer[i], window[i], data_read, packet_size);
-
-                sendto(socketfd, buffer[i], packet_size + struct_size(window[0]), 0,
-                       (const struct sockaddr *)&client_addr, sizeof(client_addr));
-            }
-        }
+        
     }
 
     cout << "Thanks for playing you fucking bitch" << endl;
