@@ -169,14 +169,12 @@ while(data_written < file_size){
 
 
 
-    cout << "packet_size: " << packet_size << " window_size: " << endl;
+   
     serialize(&temp, packet_size);
-
-    cout << temp.seq_num << "fuck this" << endl;
 
 
     array_index = findIndex( start, end, ntohl(temp.seq_num), seq_range);
-    cout << "array_index " << array_index <<  endl;
+    cout << "array_index: " << array_index <<  endl;
 
     window[array_index] = temp;
     recv_window[array_index] = true;
@@ -190,7 +188,7 @@ while(data_written < file_size){
 
    
 
-    cout << ack.seq_num << "Bro" << endl;
+    
 
     ack.seq_num = temp.seq_num;
     ack.nak = false;
@@ -210,7 +208,7 @@ while(data_written < file_size){
     if(data_written > file_size) {
         break;
     }
-    cout << "data_written: " << data_written << endl;
+    
 
     check(&start,&end,shift_index, seq_range);
 
@@ -247,7 +245,7 @@ int write_into_buffer(char* buffer[], fstream& MyFile , int packet_size, int arr
 
 // for this method, check return. if its negative or if its greater than end, its a past value
 int findIndex(int start, int end, int seq_num, int seq_range) {
-    cout << start << " " << end << " " << seq_num << endl;
+   
     if(start < end || seq_num > end) {
             return (seq_num - start);
         } else {
@@ -261,7 +259,7 @@ int findIndex(int start, int end, int seq_num, int seq_range) {
 
 
 int listen_for_packets(packet window[], bool recv_window[], int socketfd){
-    cout << "Thread On" << endl;
+    
     while(1) {
 
 
@@ -271,7 +269,7 @@ int listen_for_packets(packet window[], bool recv_window[], int socketfd){
 
 
 
-    cout << "hello world" << incoming[0] << " " << incoming[1] << endl;
+
 
     
 
@@ -379,7 +377,7 @@ int write_into_file(fstream& file, char* buffer[], int packet_size, int window_s
     while(i != shift_index) {
         file.write(buffer[i], packet_size);
         if(file.tellg() >= file_size) {
-            cout << "checking for this" << file.tellg() << endl;
+            
             return file_size;
         }
         i++;
@@ -393,7 +391,6 @@ int serialize(packet *window, int packet_size) {
     
     memcpy(&(window->seq_num),incoming + packet_size , sizeof(window->seq_num));
     memcpy(&(window->data_size), incoming + packet_size + sizeof(window->seq_num), sizeof(window->data_size));
-    cout << window->seq_num << " " << sizeof(window->seq_num) << endl;
     return 0;
 }
 bool update_sliding_window(packet window[], int seq_range, int* current_seq, int shift_index, int window_size, int packet_size) {

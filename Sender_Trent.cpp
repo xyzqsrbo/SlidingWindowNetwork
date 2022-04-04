@@ -198,7 +198,7 @@ int main(int argc, char *argv[])
 
 
     ifstream file;
-    file.open ("50MbTest");
+    file.open ("testfile");
     int file_size = filesize(file);
 
 
@@ -256,7 +256,7 @@ int main(int argc, char *argv[])
     int ind = 0;
     
 
-    cout << "begin: " << window_size - shift_index << endl;
+    
     while(data_read = read_into_buffer(file, buffer, packet_size, window_size , window_size-shift_index), data_read != -1) {
 
             update_sliding_window(window, seq_range, &current_seq, shift_index, window_size, packet_size);
@@ -266,7 +266,7 @@ int main(int argc, char *argv[])
         while(shift_index > 0){
             cout << ": " << end << endl;
         i = (window_size) - shift_index;
-        cout << "seq_num: " << window[i].seq_num << "packet_size: " << sizeof(buffer[i]) << endl;
+        cout << "seq_num: " << ntohl(window[i].seq_num) << endl;
         serialize(buffer[i], window[i], data_read, packet_size);
        
         sendto(socketfd, buffer[i], packet_size + struct_size(window[0]), 0, 
@@ -312,9 +312,9 @@ int main(int argc, char *argv[])
 
         check(&start,&end,shift_index, seq_range);
 
-        cout << "testfinder" << endl;
+        
         shiftWindow(buffer, recv_window, window, shift_index, window_size);
-        cout << "testfinder5" << endl;
+    
         }
 
        
@@ -506,7 +506,7 @@ int read_into_buffer(ifstream& file, char *buffer[], int packet_size, int window
     int i = begin;
     while(i != window_size) {
         file.read(buffer[i], packet_size);
-        cout << "fgdjiodfojik" << file.gcount() << endl;
+        
         if(!file.gcount()) {
             return -1;
         }
@@ -517,7 +517,7 @@ int read_into_buffer(ifstream& file, char *buffer[], int packet_size, int window
 }
 
 int serialize(char buffer[], packet window, int buffer_size, int packet_size) {
-    cout << window.seq_num << " " << sizeof(window.seq_num);
+   
     memcpy(buffer + packet_size, &window.seq_num, sizeof(window.seq_num));
     memcpy(buffer + packet_size + sizeof(window.seq_num), &window.data_size, sizeof(window.data_size));
     return 0;
