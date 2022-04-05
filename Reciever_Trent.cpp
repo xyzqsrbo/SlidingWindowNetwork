@@ -73,6 +73,8 @@ int findIndex(int start, int end, int seq_num, int seq_range);
 
 int write_into_file(fstream &file, char *buffer[], int packet_size, int window_size, int file_size, int shift_index);
 
+void printWindow(bool recv_window[], packet window[], int size);
+
 int main(int argc, char *argv[])
 {
     int socketfd, port;
@@ -156,26 +158,21 @@ int main(int argc, char *argv[])
             while (!ack_flag)
             {
             };
-
             cout << "packet_size: " << packet_size << " window_size: " << endl;
             serialize(&temp, packet_size);
 
             cout << "Temp Sequence Num: " << temp.seq_num << endl;
-
-            array_index = findIndex(start, end, ntohl(temp.seq_num), seq_range);
-
-            //If array index is outside of window it was already checked
-            if (array_index < 0 || array_index >= window_size)
+            unique_lock<mutex> lck(mtx);
+            // If array index is outside of window it was a past value so leave it alone
+            if (array_index = findIndex(start, end, ntohl(temp.seq_num), seq_range), array_index < 0 || array_index >= window_size)
             {
             }
-            //If array index is inside window bounds but has not been marked as received 
+            // If array index is inside window but the ack has not been done yet send the ack and write to file
             else if (!recv_window[array_index])
             {
                 window[array_index] = temp;
                 recv_window[array_index] = true;
                 write_into_buffer(buffer, MyFile, packet_size, array_index);
-
-                unique_lock<mutex> lck(mtx);
 
                 cout << "Ack sequence Num: " << ack.seq_num << endl;
 
@@ -229,24 +226,8 @@ int findIndex(int start, int end, int seq_num, int seq_range)
     cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << seq_num << endl;
     if (start < end || seq_num > end)
     {
-        /*if (seq_num - start < 0)
-        {
-            return 0;
-        }
-        else if (seq_num - start > 3)
-        {
-            return 3;
-        }*/
         return (seq_num - start);
-    } /*
-     else if (seq_range - start + seq_num < 0)
-     {
-         return 0;
-     }
-     else if (seq_range - start + seq_num > 3)
-     {
-         return 3;
-     }*/
+    }
     else
     {
         return (seq_range - start + seq_num);
@@ -303,18 +284,19 @@ int shiftWindow(char *buffer[], bool recv_window[], packet window[], int index, 
 {
     if (index == 0)
         return -1;
-
-    for (int j = 0; j < index; j++)
+    for (int i = 0; i < size; i++)
     {
-    }
-
-    for (int i = 0; i < size - index; i++)
-    {
-        recv_window[i] = recv_window[i + index];
-        recv_window[i + index] = false;
-        window[i] = window[i + index];
-        window[i + index] = {};
-        buffer[i] = buffer[i + index];
+        if (i + index >= size)
+        {
+            recv_window[i] = false;
+            window[i] = {};
+        }
+        else
+        {
+            recv_window[i] = recv_window[i + index];
+            window[i] = window[i + index];
+            buffer[i] = buffer[i + index];
+        }
     }
     return 0;
 }
@@ -389,4 +371,24 @@ bool update_sliding_window(packet window[], int seq_range, int *current_seq, int
         }
         i++;
     }
+}
+void printWindow(bool recv_window[], packet window[], int size)
+{
+    cout << " recv_window: ";
+    for (int i = 0; i < size; i++)
+    {
+        cout << recv_window[i] << " ";
+    }
+    cout << "\n"
+         << endl;
+
+    cout << " window_seq: ";
+
+    for (int i = 0; i < size; i++)
+    {
+        cout << window[i].seq_num << " ";
+    }
+
+    cout << "\n"
+         << endl;
 }
