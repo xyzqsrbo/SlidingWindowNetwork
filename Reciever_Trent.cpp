@@ -193,20 +193,6 @@ while(data_written < file_size){
              }
             
 
-            
-
-            
-
-    
-
-    ack.seq_num = temp.seq_num;
-    ack.nak = false;
-
-    
-
-    sendto(socketfd, (struct ack*)&ack, sizeof(ack), 0, 
-                                (const struct sockaddr *) &client_addr, sizeof(client_addr));
-
 
     
 
@@ -277,20 +263,6 @@ int listen_for_packets(packet window[], bool recv_window[], int socketfd){
 
 
      recvfrom(socketfd,incoming,sizeof(incoming),0, NULL, NULL);
-
-
-
-
-
-
-
-    
-
-
-
-
-
-
 
     unique_lock<mutex> lck(mtx);
 

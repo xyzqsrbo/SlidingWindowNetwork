@@ -190,7 +190,7 @@ int main(int argc, char *argv[])
 
 
     ifstream file;
-    file.open ("testfile");
+    file.open ("50MbTest");
     int file_size = filesize(file);
 
 
@@ -262,12 +262,12 @@ int main(int argc, char *argv[])
             // Set time_sent variable to time now
             window[i].time_sent = std::chrono::steady_clock::now();
             serialize(buffer[i], window[i], data_read, packet_size);
-            /*if(window[i].seq_num == 100663296){
+            if(window[i].seq_num == 100663296){
                 cout << "Losing packet " << window[i].seq_num << endl;
                 shift_index--;
                 recv_window[i].sent = true;
                 continue;
-            } */
+            }
             sendto(socketfd, buffer[i], packet_size + struct_size(window[0]), 0, 
                                 (const struct sockaddr *) &client_addr, sizeof(client_addr));
             shift_index--;
@@ -406,6 +406,10 @@ void listen_to_ack(int socketfd, rec_send recv_window[]){
             recv_data.first = "nak";
             recv_data.second = ntohl(ack.seq_num);
         }
+
+
+       recv_flag = true;
+       cv.wait(lck);
 
 
     }
