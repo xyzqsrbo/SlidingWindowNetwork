@@ -114,9 +114,11 @@ int struct_size(state packet);
 
 int struct_size(packet packet);
 
-bool update_sliding_window(packet window[], int seq_range, int* current_seq, int shift_index, int window_size, int packet_size);
+bool update_sliding_window(packet window[], int seq_range, int* current_seq, int shift_index, int window_size, int data_read, int packet_size);
 
 int serialize(char buffer[], packet window, int buffer_size, int packet_size);
+
+void bufferPrint(char* buffer[]);
 
 
 void userInput();
@@ -168,9 +170,7 @@ int main(int argc, char *argv[])
      int shift_index = 4;
     packet window[window_size];
     char **buffer;
-    buffer = new char *[window_size];
-
-
+    buffer = new char* [window_size];
     cout << "struct" << struct_size(window[0]);
     for(int i = 0; i < window_size; i++){
         buffer[i] = new char[packet_size + struct_size(window[0])];
@@ -190,12 +190,12 @@ int main(int argc, char *argv[])
 
 
     ifstream file;
-    file.open ("50MbTest");
+    file.open ("testfile");
     int file_size = filesize(file);
 
 
 
-    state setup = {htonl(seq_range), (int)htonl(file_size), (int)htonl(packet_size)};
+    state setup = {htonl(seq_range), htonl(file_size), htonl(packet_size)};
 
     
 
@@ -249,12 +249,13 @@ int main(int argc, char *argv[])
     
 
     cout << "begin: " << window_size - shift_index << endl;
-    while (data_read = read_into_buffer(file, buffer, packet_size, window_size, window_size - shift_index), data_read != -1)
+    while (1)
     {
+        data_read = read_into_buffer(file, buffer, packet_size, window_size, window_size - shift_index);
 
-        update_sliding_window(window, seq_range, &current_seq, shift_index, window_size, packet_size);
+        update_sliding_window(window, seq_range, &current_seq, shift_index, window_size, data_read, packet_size);
 
-        while (shift_index > 0)
+        while (shift_index > 0 && data_read != -1)
         {
             cout << "End Window: " << end << endl;
             i = (window_size)-shift_index;
@@ -263,11 +264,13 @@ int main(int argc, char *argv[])
             window[i].time_sent = std::chrono::steady_clock::now();
             serialize(buffer[i], window[i], data_read, packet_size);
             if(window[i].seq_num == 100663296){
-                cout << "Losing packet " << window[i].seq_num << endl;
+                  cout << "Losing packet " << window[i].seq_num << endl;
                 shift_index--;
                 recv_window[i].sent = true;
                 continue;
+            
             }
+            cout << "buffer sent " << buffer[i][0] << buffer[i][1] << buffer[i][2] << endl;
             sendto(socketfd, buffer[i], packet_size + struct_size(window[0]), 0, 
                                 (const struct sockaddr *) &client_addr, sizeof(client_addr));
             shift_index--;
@@ -278,7 +281,12 @@ int main(int argc, char *argv[])
 
         
 
-         for (int ii = 0; ii < window_size; ii++)
+         
+
+        
+        while (!recv_flag)
+            {
+                for (int ii = 0; ii < window_size; ii++)
         {
         
             /* Add sent time variable to packet
@@ -290,7 +298,7 @@ int main(int argc, char *argv[])
             auto value = win_s.time_since_epoch();
             long windowVal = value.count();
             
-            double timeout = 0.01;
+            double timeout = 0.001;
             auto now = std::chrono::steady_clock::now();
             std::chrono::duration<double> elapsed_seconds;
             if (windowVal != 0)
@@ -303,22 +311,19 @@ int main(int argc, char *argv[])
 
                 window[ii].time_sent = std::chrono::steady_clock::now();
                 serialize(buffer[ii], window[ii], data_read, packet_size);
-
                 sendto(socketfd, buffer[ii], packet_size + struct_size(window[0]), 0,
                        (const struct sockaddr *)&client_addr, sizeof(client_addr));
             }
         }
-
-        
-        if (!recv_flag)
-            {
-                continue;
-            };
+            }
 
         printWindow(recv_window, window, window_size);
         unique_lock<mutex> lck(mtx);
 
-        ind = findIndex(start, end, recv_data.second, seq_range);
+        if(ind = findIndex(start, end, recv_data.second, seq_range), ind < 0 || ind >= window_size){
+
+        } else {
+
         cout << "Array_index: " << ind << endl;
         if (recv_data.first == "ack")
         {
@@ -330,6 +335,7 @@ int main(int argc, char *argv[])
         else
         {
         }
+        }
         recv_flag = false;
         cv.notify_all();
         
@@ -340,16 +346,14 @@ int main(int argc, char *argv[])
         // if shift_index is 0, skip check and shiftWindow
 
         
-
         shift_index = slidingCheck(recv_window, window_size);
-         
 
+        cout << "shiftIndex: " << shift_index << endl;
         check(&start,&end,shift_index, seq_range);
-
-        
         shiftWindow(buffer, recv_window, window, shift_index, window_size);
-    
-        }
+
+
+    }
 
        
     
@@ -364,13 +368,17 @@ int main(int argc, char *argv[])
 
 
 // put while loop in main, and split this function up into multiple
-bool update_sliding_window(packet window[], int seq_range, int* current_seq, int shift_index, int window_size, int packet_size) {
+bool update_sliding_window(packet window[], int seq_range, int* current_seq, int shift_index, int window_size, int data_read, int packet_size) {
     int i = window_size - shift_index;
 
     while(i != window_size) {
         cout << *current_seq << endl;
         window[i].seq_num = htonl(*current_seq);
-        window[i].data_size = htonl(packet_size);
+        if( i == (window_size -1)) {
+            window[i].data_size = htonl(data_read);
+        } else {
+            window[i].data_size = htonl(packet_size);
+        }
 
         
         *current_seq += 1;
@@ -446,10 +454,13 @@ int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int ind
         recv_window[i].sent = false;
         recv_window[i].recieved = false;
         window[i] = {};
+        delete[] buffer[i];
+        buffer[i] = new char[1024 + 20];
         } else {
         recv_window[i] = recv_window[i + index];
         window[i] = window[i + index];
-        buffer[i] = buffer[i + index];
+        copy(buffer[i+index],buffer[i+index] + 1024, buffer[i]);
+        
         }
         
     }
@@ -541,9 +552,11 @@ int filesize(ifstream& file){
 }
 
 int read_into_buffer(ifstream& file, char *buffer[], int packet_size, int window_size, int begin){
+    cout << "beginning" << endl;
+    
     int i = begin;
     while(i != window_size) {
-        file.read(buffer[i], packet_size);
+        file.read(buffer[i], 1024);
         
         if(!file.gcount()) {
             return -1;
@@ -551,7 +564,12 @@ int read_into_buffer(ifstream& file, char *buffer[], int packet_size, int window
         i++;
     }
 
-    return i;
+    cout << "ending" << endl;
+
+    
+    
+
+    return file.gcount();
 }
 
 int serialize(char buffer[], packet window, int buffer_size, int packet_size) {
@@ -607,4 +625,15 @@ void printWindow(rec_send recv_window[], packet window[], int size) {
 
     cout << "\n" << endl;
 
+}
+
+void bufferPrint(char* buffer[]) {
+    for(int i =0; i < 4; i++){
+        for(int j =0; j < 1024; j++){
+            cout << buffer[i][j];
+        }
+        cout << "\n" << endl;
+    }
+
+    
 }

@@ -70,7 +70,7 @@ int serialize(packet *window, int packet_size);
 
 int findIndex(int start, int end, int seq_num, int seq_range);
 
-int write_into_file(fstream& file, char* buffer[], int packet_size, int window_size, int file_size, int shift_index);
+int write_into_file(fstream& file, char* buffer[], packet window[], int window_size, int file_size, int shift_index);
 
 
 
@@ -177,13 +177,18 @@ while(data_written < file_size){
             unique_lock<mutex> lck(mtx);
 
              if(array_index = findIndex(start, end, ntohl(temp.seq_num), seq_range), array_index < 0 || array_index >= window_size) {
-    
+                
              } else if(!recv_window[array_index]) {
                  window[array_index] = temp;
                  recv_window[array_index] = true;
                  write_into_buffer(buffer, MyFile, packet_size, array_index);
 
-                 cout << "Ack sequence Num: " << ack.seq_num << endl;
+                 printWindow(recv_window, window, window_size);
+
+
+                 cout << "Ack sequence Num: " << ntohl(temp.seq_num) << endl;
+                 cout << "Array Index: " << array_index << endl;
+
 
                 ack.seq_num = temp.seq_num;
                 ack.nak = false;
@@ -199,11 +204,16 @@ while(data_written < file_size){
     // if return value of slidingcheck is 0, skip check, write, and shift
     shift_index = slidingCheck(recv_window, window_size);
 
-    data_written += write_into_file(MyFile, buffer, packet_size, window_size, file_size, shift_index);
-    if(data_written > file_size) {
+    cout << "shift_index" << shift_index << endl;
+   
+
+    data_written = data_written + write_into_file(MyFile, buffer, window, window_size, file_size, shift_index);
+
+    cout << "data Written " << data_written << endl; 
+    
+     if(data_written >= file_size) {
         break;
     }
-    
 
     check(&start,&end,shift_index, seq_range);
 
@@ -251,8 +261,6 @@ int findIndex(int start, int end, int seq_num, int seq_range)
         return (seq_range - start + seq_num);
     }
 }
-
-
 
 
 
@@ -317,10 +325,12 @@ int shiftWindow(char *buffer[], bool recv_window[], packet window[], int index, 
         if( i+ index >= size) {
         recv_window[i] = false;
         window[i] = {};
+        delete[] buffer[i];
+        buffer[i] = new char[1024+20];
         } else {
         recv_window[i] = recv_window[i + index];
         window[i] = window[i + index];
-        buffer[i] = buffer[i + index];
+        copy(buffer[i+index],buffer[i+index] + 1024, buffer[i]);
         }
         
     }
@@ -358,10 +368,12 @@ int file_size(fstream& file){
     return file_size;
 }
 
-int write_into_file(fstream& file, char* buffer[], int packet_size, int window_size, int file_size, int shift_index){
+int write_into_file(fstream& file, char* buffer[], packet window[], int window_size, int file_size, int shift_index){
     int i =0;
     while(i != shift_index) {
-        file.write(buffer[i], packet_size);
+        cout << "data_size: " << ntohl(window[i].data_size) << endl;
+        file.write(buffer[i], ntohl(window[i].data_size));
+
         if(file.tellg() >= file_size) {
             
             return file_size;
@@ -369,10 +381,11 @@ int write_into_file(fstream& file, char* buffer[], int packet_size, int window_s
         i++;
     }
 
-    return i*packet_size;
+
+    return (i * ntohl(window[i -1].data_size));
 }
 
-int serialize(packet *window, int packet_size) {
+int serialize(packet* window, int packet_size) {
     
     
     memcpy(&(window->seq_num),incoming + packet_size , sizeof(window->seq_num));
@@ -404,7 +417,7 @@ void printWindow(bool recv_window[], packet window[], int size) {
     cout << " window_seq: ";
 
      for(int i =0; i < size; i++){
-        cout << window[i].seq_num << " ";
+        cout << ntohl(window[i].seq_num) << " ";
     }
 
     cout << "\n" << endl;
