@@ -147,16 +147,11 @@ int main(int argc, char *argv[])
     while (data_written < file_size)
     {
         int j = 0;
-        int prevIndex = 0;
 
         while (j != window_size)
         {
             update_sliding_window(window, seq_range, &current_seq, shift_index, window_size, packet_size);
             shift_index = 0;
-
-            while (!ack_flag)
-            {
-            };
 
             while (!ack_flag)
             {
@@ -169,35 +164,30 @@ int main(int argc, char *argv[])
 
             array_index = findIndex(start, end, ntohl(temp.seq_num), seq_range);
 
-            if(array_index < 0){
-                if(prevIndex == window_size - 1){
-                    shift_index = 0;
-                }else{
-                    shift_index = prevIndex + 1;
-                }
-            }else if(array_index > window_size - 1){
-                shift_index = 0;
+            //If array index is outside of window it was already checked
+            if (array_index < 0 || array_index >= window_size)
+            {
             }
-            prevIndex = shift_index;
+            //If array index is inside window bounds but has not been marked as received 
+            else if (!recv_window[array_index])
+            {
+                window[array_index] = temp;
+                recv_window[array_index] = true;
+                write_into_buffer(buffer, MyFile, packet_size, array_index);
 
+                unique_lock<mutex> lck(mtx);
 
-            window[array_index] = temp;
-            recv_window[array_index] = true;
-            write_into_buffer(buffer, MyFile, packet_size, array_index);
+                cout << "Ack sequence Num: " << ack.seq_num << endl;
 
-            unique_lock<mutex> lck(mtx);
+                ack.seq_num = temp.seq_num;
+                ack.nak = false;
 
-            cout << "Ack sequence Num: " << ack.seq_num << endl;
-
-            ack.seq_num = temp.seq_num;
-            ack.nak = false;
-
-            sendto(socketfd, (struct ack *)&ack, sizeof(ack), 0,
-                   (const struct sockaddr *)&client_addr, sizeof(client_addr));
+                sendto(socketfd, (struct ack *)&ack, sizeof(ack), 0,
+                       (const struct sockaddr *)&client_addr, sizeof(client_addr));
+            }
 
             // if return value of slidingcheck is 0, skip check, write, and shift
             shift_index = slidingCheck(recv_window, window_size);
-
 
             data_written += write_into_file(MyFile, buffer, packet_size, window_size, file_size, shift_index);
             if (data_written > file_size)
@@ -400,5 +390,3 @@ bool update_sliding_window(packet window[], int seq_range, int *current_seq, int
         i++;
     }
 }
-
-
