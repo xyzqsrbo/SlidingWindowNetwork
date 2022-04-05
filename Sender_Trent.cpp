@@ -121,13 +121,7 @@ int serialize(char buffer[], packet window, int buffer_size, int packet_size);
 
 void userInput();
 
-
-
-
-
-
-
-
+void printWindow(rec_send recv_window[], packet window[], int size);
 
 int main(int argc, char *argv[])
 {
@@ -254,48 +248,90 @@ int main(int argc, char *argv[])
     int ind = 0;
     
 
-    
-    while(data_read = read_into_buffer(file, buffer, packet_size, window_size , window_size-shift_index), data_read != -1) {
+    cout << "begin: " << window_size - shift_index << endl;
+    while (data_read = read_into_buffer(file, buffer, packet_size, window_size, window_size - shift_index), data_read != -1)
+    {
 
-            update_sliding_window(window, seq_range, &current_seq, shift_index, window_size, packet_size);
+        update_sliding_window(window, seq_range, &current_seq, shift_index, window_size, packet_size);
 
-
-
-        while(shift_index > 0){
-            cout << ": " << end << endl;
-        i = (window_size) - shift_index;
-        cout << "seq_num: " << ntohl(window[i].seq_num) << endl;
-        serialize(buffer[i], window[i], data_read, packet_size);
-       
-        sendto(socketfd, buffer[i], packet_size + struct_size(window[0]), 0, 
+        while (shift_index > 0)
+        {
+            cout << "End Window: " << end << endl;
+            i = (window_size)-shift_index;
+            cout << "seq_num sent: " << ntohl(window[i].seq_num) << " packet_size: " << sizeof(buffer[i]) << endl;
+            // Set time_sent variable to time now
+            window[i].time_sent = std::chrono::steady_clock::now();
+            serialize(buffer[i], window[i], data_read, packet_size);
+            /*if(window[i].seq_num == 100663296){
+                cout << "Losing packet " << window[i].seq_num << endl;
+                shift_index--;
+                recv_window[i].sent = true;
+                continue;
+            } */
+            sendto(socketfd, buffer[i], packet_size + struct_size(window[0]), 0, 
                                 (const struct sockaddr *) &client_addr, sizeof(client_addr));
-        shift_index--;
-        recv_window[i].sent = true;
-        cout << "Packet " << current_packet << " has been sent..." << endl;
-        current_packet++;
-
+            shift_index--;
+            recv_window[i].sent = true;
+            cout << "Packet " << current_packet << " has been sent..." << endl;
+            current_packet++;
         }
 
+        
 
-
-       
-         while(!recv_flag) {};
-
-          unique_lock<mutex> lck(mtx);
-
-          ind=findIndex(start, end, recv_data.second, seq_range);
+         for (int ii = 0; ii < window_size; ii++)
+        {
+        
+            /* Add sent time variable to packet
+             * Check if (time now - sent time in packet) > timeout -- resend packet
+             * If resent packet set time sent variable to time now
+             */
+            auto epoch = window[ii].time_sent;
+            auto win_s = std::chrono::time_point_cast<std::chrono::seconds>(epoch);
+            auto value = win_s.time_since_epoch();
+            long windowVal = value.count();
             
-            if (recv_data.first == "ack"){
-                    // cout << recv_data.second << " Bro " << start << " Bro "<<  endl;
-                    // Use formula for find_index in Reciever, for insertion
-                    recv_window[ind].recieved = true;
-                    // cout << "ack " << recv_data.second << " recieved..." << endl;
-
-            } else {
-
+            double timeout = 0.01;
+            auto now = std::chrono::steady_clock::now();
+            std::chrono::duration<double> elapsed_seconds;
+            if (windowVal != 0)
+            {
+                elapsed_seconds = now - window[ii].time_sent;
             }
-            recv_flag = false;
-            cv.notify_all();
+            if (elapsed_seconds.count() > timeout && recv_window[ii].sent && !recv_window[ii].recieved)
+            {
+                cout << "A timeout for packet " << window[ii].seq_num << " recieved..." << endl;
+
+                window[ii].time_sent = std::chrono::steady_clock::now();
+                serialize(buffer[ii], window[ii], data_read, packet_size);
+
+                sendto(socketfd, buffer[ii], packet_size + struct_size(window[0]), 0,
+                       (const struct sockaddr *)&client_addr, sizeof(client_addr));
+            }
+        }
+
+        
+        if (!recv_flag)
+            {
+                continue;
+            };
+
+        printWindow(recv_window, window, window_size);
+        unique_lock<mutex> lck(mtx);
+
+        ind = findIndex(start, end, recv_data.second, seq_range);
+        cout << "Array_index: " << ind << endl;
+        if (recv_data.first == "ack")
+        {
+            // cout << recv_data.second << " Bro " << start << " Bro "<<  endl;
+            // Use formula for find_index in Reciever, for insertion
+            recv_window[ind].recieved = true;
+            // cout << "ack " << recv_data.second << " recieved..." << endl;
+        }
+        else
+        {
+        }
+        recv_flag = false;
+        cv.notify_all();
         
         // cout << recv_flag << endl;
         
@@ -316,6 +352,7 @@ int main(int argc, char *argv[])
         }
 
        
+    
 
 
     
@@ -357,21 +394,18 @@ void listen_to_ack(int socketfd, rec_send recv_window[]){
      recvfrom(socketfd, (struct ack*)&ack ,sizeof(ack),0, NULL, NULL);
      cout << "checkmark"<<endl;
 
-    unique_lock<mutex> lck(mtx);
-     if(!ack.nak) {
-         recv_data.first = "ack";
-         recv_data.second = ntohl(ack.seq_num);
-
-     } else {
-         recv_data.first = "nak";
-         recv_data.second = ntohl(ack.seq_num);
-     }
-
-     recv_flag = true;
-
-     cv.wait(lck);
-
-     
+        unique_lock<mutex> lck(mtx);
+        if (!ack.nak)
+        {
+            recv_data.first = "ack";
+            recv_data.second = ntohl(ack.seq_num);
+            cout << "recieved ack num: " << recv_data.second << endl;
+        }
+        else
+        {
+            recv_data.first = "nak";
+            recv_data.second = ntohl(ack.seq_num);
+        }
 
 
     }
@@ -398,37 +432,39 @@ int print_packet(packet window[], bool all, int index, int size){
     }
 }
 
-
-
-
-int shiftWindow(char* buffer[], rec_send recv_window[], packet window[],  int index, int size){
-    if(index == 0) return -1;
-
-    for(int j =0; j < index; j++) {
-      
-    }
-    
-    for(int i =0 ; i < size - index; i++){
-        recv_window[i] = recv_window[i+index];
-        recv_window[i+index].sent = false;
-        recv_window[i+index].recieved = false;
-        window[i] = window[i+index];
-        window[i+index] = {};
-        buffer[i] = buffer[i+index]; 
-
-
+int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int index, int size)
+{
+    if (index == 0)
+        return -1;
+    for (int i = 0; i < size; i++)
+    {
+        if( i+ index >= size) {
+        recv_window[i].sent = false;
+        recv_window[i].recieved = false;
+        window[i] = {};
+        } else {
+        recv_window[i] = recv_window[i + index];
+        window[i] = window[i + index];
+        buffer[i] = buffer[i + index];
+        }
+        
     }
     return 0;
 
 }
 
+int findIndex(int start, int end, int seq_num, int seq_range)
+{
 
-int findIndex(int start, int end, int seq_num, int seq_range) {
-    if(start < end || seq_num > end) {
-            return seq_num - start;
-        } else {
-           return seq_range - start + seq_num;
-        }
+    cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << seq_num << endl;
+    if (start < end || seq_num > end)
+    {
+        return seq_num - start;
+    }
+    else
+    {
+        return seq_range - start + seq_num;
+    }
 }
 
 
@@ -550,4 +586,21 @@ void userInput() {
     } else {
       //input default values for the above variables to run the program
     }
+}
+
+void printWindow(rec_send recv_window[], packet window[], int size) {
+    cout << "recv_window: ";
+    for(int i =0; i < size; i++){
+        cout << recv_window[i].recieved << " ";
+    }
+    cout << "\n" << endl;
+
+    cout << "window_seq: ";
+
+     for(int i =0; i < size; i++){
+        cout << ntohl(window[i].seq_num) << " ";
+    }
+
+    cout << "\n" << endl;
+
 }
