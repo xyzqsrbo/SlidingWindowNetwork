@@ -203,6 +203,7 @@ int main(int argc, char *argv[])
         }
     }
     MyFile.close();
+    close(socketfd);
     return 0;
 }
 // check if buffer is full, if so, write into file, and memset buffer, and also reset buffer_index

@@ -216,7 +216,7 @@ int main(int argc, char *argv[])
     int ind = 0;
 
     cout << "begin: " << window_size - shift_index << endl;
-    while (data_read = read_into_buffer(file, buffer, packet_size, window_size, window_size - shift_index), data_read != -1)
+    while (data_read = read_into_buffer(file, buffer, packet_size, window_size, window_size - shift_index), data_read != -1 && !window.empty())
     {
 
         update_sliding_window(window, seq_range, &current_seq, shift_index, window_size, packet_size);
@@ -232,6 +232,8 @@ int main(int argc, char *argv[])
             /*if(window[i].seq_num == 100663296){
                 cout << "Losing packet " << window[i].seq_num << endl;
                 shift_index--;
+                recv_window[i].sent = true;
+                current_Packet++;
                 continue;
             }*/
             sendto(socketfd, buffer[i], packet_size + struct_size(window[0]), 0,
@@ -262,7 +264,7 @@ int main(int argc, char *argv[])
                 elapsed_seconds = now - window[ii].time_sent;
                 cout << "Elapsed Seconds: " << elapsed_seconds.count() << endl;
             }
-            if (elapsed_seconds.count() > timeout && recv_window[ii].sent && !recv_window[ii].recieved)
+            if (elapsed_seconds.count() > timeout /*&& recv_window[ii].sent && !recv_window[ii].recieved*/)
             {
                 cout << "A timeout for packet " << window[ii].seq_num << " recieved..." << endl;
 
@@ -272,8 +274,9 @@ int main(int argc, char *argv[])
                 sendto(socketfd, buffer[ii], packet_size + struct_size(window[0]), 0,
                        (const struct sockaddr *)&client_addr, sizeof(client_addr));
             }
+            
         }
-
+        cout << "END OF ELAPSED TIME FOR ONE ITERATION OF WINDOW" << endl;
         if (!recv_flag)
         {
             continue;
@@ -311,7 +314,9 @@ int main(int argc, char *argv[])
     }
 
     cout << "Thanks for playing you fucking bitch" << endl;
+ 
 
+    close(socketfd);
     return 0;
 }
 
