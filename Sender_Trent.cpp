@@ -1,10 +1,4 @@
 
-/******************************************************************************
-                              Online C++ Compiler.
-               Code, Compile, Run and Debug C++ program online.
-Write your code in this editor and press "Run" button to compile and execute it.
-*******************************************************************************/
-
 #include <iostream>
 #include <stdlib.h>
 #include <string.h>
@@ -192,7 +186,7 @@ int main(int argc, char *argv[])
 
     if (::bind(socketfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
         perror("ERROR on binding");
-    //for automatic timeout interval setting
+    // for automatic timeout interval setting
     auto start_now = std::chrono::steady_clock::now();
     if ((sendto(socketfd, (struct state *)&setup, sizeof(setup), 0,
                 (const struct sockaddr *)&client_addr, sizeof(client_addr))) < 0)
@@ -201,7 +195,7 @@ int main(int argc, char *argv[])
         int fail = 0;
         do
         {
-            //for automatic timeout interval setting
+            // for automatic timeout interval setting
             auto start_now = std::chrono::steady_clock::now();
             fail = sendto(socketfd, (struct state *)&setup, sizeof(setup), 0,
                           (const struct sockaddr *)&client_addr, sizeof(client_addr));
@@ -210,8 +204,7 @@ int main(int argc, char *argv[])
 
     recvfrom(socketfd, &checking, sizeof(checking), 0, NULL, NULL);
     auto start_end = std::chrono::steady_clock::now();
-    timeout = double(std::chrono::duration_cast<std::chrono::milliseconds>(start_end - start_now).count()) + 3;
-    cout << "Timeout: " << timeout << endl;
+    timeout = double(std::chrono::duration_cast<std::chrono::milliseconds>(start_end - start_now).count()) + 3.0;
 
     if (checking)
     {
@@ -227,7 +220,6 @@ int main(int argc, char *argv[])
     buffer_index = 0;
     int ind = 0;
 
-    cout << "begin: " << window_size - shift_index << endl;
     // Try to find the last flag available and while that hasen't been found.
     while (!donzo)
     {
@@ -235,7 +227,7 @@ int main(int argc, char *argv[])
 
         update_sliding_window(window, seq_range, &current_seq, shift_index, window_size, data_read, packet_size);
 
-        //This checks for timeouts while the file is not done being acknowledged
+        // This checks for timeouts while the file is not done being acknowledged
         for (int ii = 0; ii < window_size; ii++)
         {
             /* Add sent time variable to packet
@@ -249,7 +241,7 @@ int main(int argc, char *argv[])
             long windowVal = value.count();
 
             // Timeout in milliseconds if user specified
-            //timeout = 100;
+            // timeout = 100;
             // Time no in nanoseconds
             auto now = std::chrono::steady_clock::now();
             double elapsed_seconds = 0.0;
@@ -257,7 +249,6 @@ int main(int argc, char *argv[])
             {
                 // convert time sent(ns) and now(ns) to milliseconds and subtract them
                 elapsed_seconds = double(std::chrono::duration_cast<std::chrono::milliseconds>(now - window[ii].time_sent).count());
-                cout << "Elapsed Milliseconds: " << elapsed_seconds << " for packet: " << ntohl(window[ii].seq_num) << endl;
             }
             // if elapsed_seconds equal or above the timeout in milliseconds reset sent time(ns) and send the packet
             if (elapsed_seconds >= timeout /*&& recv_window[ii].sent && !recv_window[ii].recieved*/)
@@ -273,26 +264,23 @@ int main(int argc, char *argv[])
 
         while (shift_index > 0 && data_read != -1)
         {
-            cout << "End Window: " << end << endl;
             i = (window_size)-shift_index;
-            cout << "seq_num: " << ntohl(window[i].seq_num) << " packet_size: " << sizeof(buffer[i]) << endl;
             // Set time_sent variable to time now
             window[i].time_sent = std::chrono::steady_clock::now();
             serialize(buffer[i], window[i], data_read, packet_size);
-            /*if(ntohl(window[i].seq_num) == 1){
+            if(ntohl(window[i].seq_num) == 1){
                 cout << "Losing packet " << ntohl(window[i].seq_num) << endl;
                 shift_index--;
                 recv_window[i].sent = true;
-                current_Packet++;
                 continue;
-            }*/
+            }
             sendto(socketfd, buffer[i], packet_size + struct_size(window[0]), 0,
                    (const struct sockaddr *)&client_addr, sizeof(client_addr));
             shift_index--;
             recv_window[i].sent = true;
-            cout << "Packet " << current_packet << " has been sent..." << endl;
-            current_packet++;
         }
+        while(!recv_flag){
+        };
 
         printWindow(recv_window, window, window_size);
         unique_lock<mutex> lck(mtx);
@@ -303,13 +291,10 @@ int main(int argc, char *argv[])
         else
         {
 
-            cout << "Array_index: " << ind << endl;
             if (recv_data.first == "ack")
             {
-                // cout << recv_data.second << " Bro " << start << " Bro "<<  endl;
                 // Use formula for find_index in Reciever, for insertion
                 recv_window[ind].recieved = true;
-                // cout << "ack " << recv_data.second << " recieved..." << endl;
             }
             else
             {
@@ -318,20 +303,15 @@ int main(int argc, char *argv[])
         recv_flag = false;
         cv.notify_all();
 
-        // cout << recv_flag << endl;
-
-        // cout << recv_flag << endl;
-
         // if shift_index is 0, skip check and shiftWindow
 
         shift_index = slidingCheck(recv_window, window_size);
 
-        cout << "shiftIndex: " << shift_index << endl;
         check(&start, &end, shift_index, seq_range);
         shiftWindow(buffer, recv_window, window, shift_index, window_size);
     }
 
-    cout << "Thanks for playing you fucking bitch" << endl;
+    cout << "Done sending files and receiver all acks!!!" << endl;
 
     close(socketfd);
     return 0;
@@ -344,7 +324,6 @@ bool update_sliding_window(packet window[], int seq_range, int *current_seq, int
 
     while (i != window_size)
     {
-        cout << "Current Sequence: " << *current_seq << endl;
         window[i].seq_num = htonl(*current_seq);
         if (i == (window_size - 1))
         {
@@ -445,8 +424,6 @@ int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int ind
 
 int findIndex(int start, int end, int seq_num, int seq_range)
 {
-
-    cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << (int)ntohl(seq_num) << " This Should Be Working" << endl;
     if (start < end || seq_num > end)
     {
         return seq_num - start;

@@ -87,7 +87,7 @@ int main(int argc, char *argv[])
     int packet_size = 0;
 
     packet window[window_size];
-    bool recv_window[window_size];
+    bool recv_window[window_size] = {false};
     int start;
     int end;
     int current_packet = 0;
@@ -161,10 +161,7 @@ int main(int argc, char *argv[])
             while (!ack_flag)
             {
             };
-            cout << "packet_size: " << packet_size << " window_size: " << endl;
             serialize(&temp, packet_size);
-
-            cout << "Temp Sequence Num: " << temp.seq_num << endl;
             unique_lock<mutex> lck(mtx);
             // If array index is outside of window it was a past value so leave it alone
             if (array_index = findIndex(start, end, ntohl(temp.seq_num), seq_range), array_index < 0 || array_index >= window_size)
@@ -179,9 +176,6 @@ int main(int argc, char *argv[])
 
                 printWindow(recv_window, window, window_size);
 
-                cout << "Ack sequence Num: " << ntohl(ack.seq_num) << endl;
-                cout << "Array Index: " << array_index << endl;
-
                 ack.seq_num = temp.seq_num;
                 ack.nak = false;
                 ack.done = false;
@@ -193,11 +187,7 @@ int main(int argc, char *argv[])
             // if return value of slidingcheck is 0, skip check, write, and shift
             shift_index = slidingCheck(recv_window, window_size);
 
-            cout << "shift_index" << shift_index << endl;
-
             data_written = data_written + write_into_file(MyFile, buffer, window, window_size, file_size, shift_index);
-
-            cout << "data Written " << data_written << endl;
 
             if (data_written >= file_size)
             {
@@ -223,14 +213,13 @@ int main(int argc, char *argv[])
 
     MyFile.close();
     close(socketfd);
-    cout << "You made it fucker" << endl;
+    cout << "EOF Receiver" << endl;
     return 0;
 }
 // check if buffer is full, if so, write into file, and memset buffer, and also reset buffer_index
 int write_into_buffer(char *buffer[], fstream &MyFile, int packet_size, int array_index)
 {
     int j = 0;
-    cout << "Array Index: " << array_index << endl;
 
     while (j != packet_size)
     {
@@ -244,7 +233,6 @@ int write_into_buffer(char *buffer[], fstream &MyFile, int packet_size, int arra
 // for this method, check return. if its negative or if its greater than end, its a past value
 int findIndex(int start, int end, int seq_num, int seq_range)
 {
-    cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << ntohl(seq_num) << endl;
     if (start < end || seq_num > end)
     {
         return (seq_num - start);
@@ -359,7 +347,6 @@ int write_into_file(fstream &file, char *buffer[], packet window[], int window_s
     int i = 0;
     while (i != shift_index)
     {
-        cout << "data_size: " << ntohl(window[i].data_size) << endl;
         file.write(buffer[i], ntohl(window[i].data_size));
 
         if (file.tellg() >= file_size)
