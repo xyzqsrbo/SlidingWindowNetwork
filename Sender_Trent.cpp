@@ -71,6 +71,7 @@ struct ack
 {
     int seq_num;
     bool nak;
+    bool fin;
 };
 
 /* our sl
@@ -121,6 +122,8 @@ void bufferPrint(char *buffer[]);
 void userInput();
 
 void printWindow(rec_send recv_window[], packet window[], int size);
+
+bool donzo = false;
 
 int main(int argc, char *argv[])
 {
@@ -219,7 +222,7 @@ int main(int argc, char *argv[])
 
     cout << "begin: " << window_size - shift_index << endl;
     //Try to find the last flag available and while that hasen't been found.
-    while (!recv_flag)
+    while (!donzo)
     {
         data_read = read_into_buffer(file, buffer, packet_size, window_size, window_size - shift_index);
 
@@ -324,8 +327,8 @@ int main(int argc, char *argv[])
         check(&start, &end, shift_index, seq_range);
         shiftWindow(buffer, recv_window, window, shift_index, window_size);
     }
-
-       
+    
+    
     
 
 
@@ -386,11 +389,16 @@ void listen_to_ack(int socketfd, rec_send recv_window[])
             recv_data.first = "nak";
             recv_data.second = ntohl(ack.seq_num);
         }
+        if(ack.fin){
+            donzo = true;
+        }
 
         recv_flag = true;
         cv.wait(lck);
     }
 }
+
+
 /*
 Prints out packet information for debugging.
 window: array of packets to print;

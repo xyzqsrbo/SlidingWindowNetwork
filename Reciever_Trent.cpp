@@ -39,6 +39,7 @@ struct ack
 {
     int seq_num;
     bool nak;
+    bool done;
 };
 
 mutex mtx;
@@ -119,6 +120,7 @@ int main(int argc, char *argv[])
     state setup;
     ack ack;
     int checking = htonl(1);
+    
 
     if (::bind(socketfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
         perror("ERROR on binding");
@@ -181,6 +183,7 @@ int main(int argc, char *argv[])
 
                 ack.seq_num = temp.seq_num;
                 ack.nak = false;
+                ack.done = false;
 
                 sendto(socketfd, (struct ack *)&ack, sizeof(ack), 0,
                        (const struct sockaddr *)&client_addr, sizeof(client_addr));
@@ -210,6 +213,13 @@ int main(int argc, char *argv[])
             j++;
         }
     }
+    //end the sender while loop
+    ack.done = true;
+    ack.nak = false;
+    ack.seq_num = 69;
+    sendto(socketfd, (struct ack *)&ack, sizeof(ack), 0,
+                       (const struct sockaddr *)&client_addr, sizeof(client_addr));
+
     MyFile.close();
     close(socketfd);
     cout << "You made it fucker" << endl;
