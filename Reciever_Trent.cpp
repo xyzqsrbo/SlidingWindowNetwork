@@ -25,7 +25,7 @@ struct packet
     int data_size;
     int checksum = 0;
     int seq_num;
-    int time_sent = 0;
+    std::chrono::time_point<std::chrono::steady_clock> time_sent;
 };
 
 struct state
@@ -40,6 +40,7 @@ struct ack
     int seq_num;
     bool nak;
     bool done;
+    std::chrono::time_point<std::chrono::steady_clock> time_sent;
 };
 
 mutex mtx;
@@ -243,7 +244,7 @@ int write_into_buffer(char *buffer[], fstream &MyFile, int packet_size, int arra
 // for this method, check return. if its negative or if its greater than end, its a past value
 int findIndex(int start, int end, int seq_num, int seq_range)
 {
-    cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << seq_num << endl;
+    cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << ntohl(seq_num) << endl;
     if (start < end || seq_num > end)
     {
         return (seq_num - start);

@@ -45,6 +45,8 @@ int windowSize;
 int rangeStart;
 int rangeEnd;
 string errors;
+double timeout;
+std::chrono::time_point<std::chrono::steady_clock> first_sent;
 
 struct packet
 {
@@ -118,7 +120,6 @@ int serialize(char buffer[], packet window, int buffer_size, int packet_size);
 
 void bufferPrint(char *buffer[]);
 
-
 void userInput();
 
 void printWindow(rec_send recv_window[], packet window[], int size);
@@ -164,7 +165,6 @@ int main(int argc, char *argv[])
     packet window[window_size];
     char **buffer;
     buffer = new char *[window_size];
-    cout << "struct" << struct_size(window[0]);
     for (int i = 0; i < window_size; i++)
     {
         buffer[i] = new char[packet_size + struct_size(window[0])];
@@ -192,7 +192,8 @@ int main(int argc, char *argv[])
 
     if (::bind(socketfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
         perror("ERROR on binding");
-
+    //for automatic timeout interval setting
+    auto start_now = std::chrono::steady_clock::now();
     if ((sendto(socketfd, (struct state *)&setup, sizeof(setup), 0,
                 (const struct sockaddr *)&client_addr, sizeof(client_addr))) < 0)
     {
@@ -200,12 +201,18 @@ int main(int argc, char *argv[])
         int fail = 0;
         do
         {
+            //for automatic timeout interval setting
+            auto start_now = std::chrono::steady_clock::now();
             fail = sendto(socketfd, (struct state *)&setup, sizeof(setup), 0,
                           (const struct sockaddr *)&client_addr, sizeof(client_addr));
         } while (fail < 0);
     }
 
     recvfrom(socketfd, &checking, sizeof(checking), 0, NULL, NULL);
+    auto start_end = std::chrono::steady_clock::now();
+    timeout = double(std::chrono::duration_cast<std::chrono::milliseconds>(start_end - start_now).count()) + 3;
+    cout << "Timeout: " << timeout << endl;
+
     if (checking)
     {
         cout << "Reciever has gotten initial setup" << endl;
@@ -221,23 +228,59 @@ int main(int argc, char *argv[])
     int ind = 0;
 
     cout << "begin: " << window_size - shift_index << endl;
-    //Try to find the last flag available and while that hasen't been found.
+    // Try to find the last flag available and while that hasen't been found.
     while (!donzo)
     {
         data_read = read_into_buffer(file, buffer, packet_size, window_size, window_size - shift_index);
 
         update_sliding_window(window, seq_range, &current_seq, shift_index, window_size, data_read, packet_size);
 
+        //This checks for timeouts while the file is not done being acknowledged
+        for (int ii = 0; ii < window_size; ii++)
+        {
+            /* Add sent time variable to packet
+             * Check if (time now - sent time in packet) > timeout -- resend packet
+             * If resent packet set time sent variable to time now
+             */
+            // This is used to find if the packet has been sent yet -- i.e., time_sent!=0
+            auto epoch = window[ii].time_sent;
+            auto win_s = std::chrono::time_point_cast<std::chrono::milliseconds>(epoch);
+            auto value = win_s.time_since_epoch();
+            long windowVal = value.count();
+
+            // Timeout in milliseconds if user specified
+            //timeout = 100;
+            // Time no in nanoseconds
+            auto now = std::chrono::steady_clock::now();
+            double elapsed_seconds = 0.0;
+            if (windowVal != 0)
+            {
+                // convert time sent(ns) and now(ns) to milliseconds and subtract them
+                elapsed_seconds = double(std::chrono::duration_cast<std::chrono::milliseconds>(now - window[ii].time_sent).count());
+                cout << "Elapsed Milliseconds: " << elapsed_seconds << " for packet: " << ntohl(window[ii].seq_num) << endl;
+            }
+            // if elapsed_seconds equal or above the timeout in milliseconds reset sent time(ns) and send the packet
+            if (elapsed_seconds >= timeout /*&& recv_window[ii].sent && !recv_window[ii].recieved*/)
+            {
+                cout << "A timeout for packet " << ntohl(window[ii].seq_num) << " recieved..." << endl;
+
+                window[ii].time_sent = std::chrono::steady_clock::now();
+                serialize(buffer[ii], window[ii], data_read, packet_size);
+                sendto(socketfd, buffer[ii], packet_size + struct_size(window[0]), 0,
+                       (const struct sockaddr *)&client_addr, sizeof(client_addr));
+            }
+        }
+
         while (shift_index > 0 && data_read != -1)
         {
             cout << "End Window: " << end << endl;
             i = (window_size)-shift_index;
-            cout << "seq_num: " << window[i].seq_num << " packet_size: " << sizeof(buffer[i]) << endl;
+            cout << "seq_num: " << ntohl(window[i].seq_num) << " packet_size: " << sizeof(buffer[i]) << endl;
             // Set time_sent variable to time now
             window[i].time_sent = std::chrono::steady_clock::now();
             serialize(buffer[i], window[i], data_read, packet_size);
-            /*if(window[i].seq_num == 100663296){
-                cout << "Losing packet " << window[i].seq_num << endl;
+            /*if(ntohl(window[i].seq_num) == 1){
+                cout << "Losing packet " << ntohl(window[i].seq_num) << endl;
                 shift_index--;
                 recv_window[i].sent = true;
                 current_Packet++;
@@ -250,45 +293,6 @@ int main(int argc, char *argv[])
             cout << "Packet " << current_packet << " has been sent..." << endl;
             current_packet++;
         }
-
-        //while (!recv_flag)
-        //{
-            for (int ii = 0; ii < window_size; ii++)
-            {
-
-                /* Add sent time variable to packet
-                 * Check if (time now - sent time in packet) > timeout -- resend packet
-                 * If resent packet set time sent variable to time now
-                 */
-                //This is used to find if the packet has been sent yet -- i.e., time_sent!=0
-                auto epoch = window[ii].time_sent;
-                auto win_s = std::chrono::time_point_cast<std::chrono::milliseconds>(epoch);
-                auto value = win_s.time_since_epoch();
-                long windowVal = value.count();
-
-                //Timeout in milliseconds
-                double timeout = 100;
-                //Time no in nanoseconds
-                auto now = std::chrono::steady_clock::now();
-                double elapsed_seconds = 0.0;
-                if (windowVal != 0)
-                {
-                    //convert time sent(ns) and now(ns) to milliseconds and subtract them
-                    elapsed_seconds = double(std::chrono::duration_cast<std::chrono::milliseconds>(now - window[ii].time_sent).count());
-                    cout << "Elapsed Milliseconds: " << elapsed_seconds << " for packet: " << window[ii].seq_num << endl;
-                }
-                //if elapsed_seconds equal or above the timeout in milliseconds reset sent time(ns) and send the packet
-                if (elapsed_seconds >= timeout /*&& recv_window[ii].sent && !recv_window[ii].recieved*/)
-                {
-                    cout << "A timeout for packet " << window[ii].seq_num << " recieved..." << endl;
-
-                    window[ii].time_sent = std::chrono::steady_clock::now();
-                    serialize(buffer[ii], window[ii], data_read, packet_size);
-                    sendto(socketfd, buffer[ii], packet_size + struct_size(window[0]), 0,
-                           (const struct sockaddr *)&client_addr, sizeof(client_addr));
-                }
-            }
-        //}
 
         printWindow(recv_window, window, window_size);
         unique_lock<mutex> lck(mtx);
@@ -320,17 +324,12 @@ int main(int argc, char *argv[])
 
         // if shift_index is 0, skip check and shiftWindow
 
-
         shift_index = slidingCheck(recv_window, window_size);
 
         cout << "shiftIndex: " << shift_index << endl;
         check(&start, &end, shift_index, seq_range);
         shiftWindow(buffer, recv_window, window, shift_index, window_size);
     }
-    
-    
-    
-
 
     cout << "Thanks for playing you fucking bitch" << endl;
 
@@ -375,8 +374,6 @@ void listen_to_ack(int socketfd, rec_send recv_window[])
     {
 
         recvfrom(socketfd, (struct ack *)&ack, sizeof(ack), 0, NULL, NULL);
-        cout << "checkmark" << endl;
-
         unique_lock<mutex> lck(mtx);
         if (!ack.nak)
         {
@@ -389,7 +386,8 @@ void listen_to_ack(int socketfd, rec_send recv_window[])
             recv_data.first = "nak";
             recv_data.second = ntohl(ack.seq_num);
         }
-        if(ack.fin){
+        if (ack.fin)
+        {
             donzo = true;
         }
 
@@ -397,7 +395,6 @@ void listen_to_ack(int socketfd, rec_send recv_window[])
         cv.wait(lck);
     }
 }
-
 
 /*
 Prints out packet information for debugging.
@@ -441,7 +438,6 @@ int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int ind
             recv_window[i] = recv_window[i + index];
             window[i] = window[i + index];
             copy(buffer[i + index], buffer[i + index] + 1024, buffer[i]);
-        
         }
     }
     return 0;
@@ -450,7 +446,7 @@ int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int ind
 int findIndex(int start, int end, int seq_num, int seq_range)
 {
 
-    cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << seq_num << endl;
+    cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << (int)ntohl(seq_num) << " This Should Be Working" << endl;
     if (start < end || seq_num > end)
     {
         return seq_num - start;
@@ -527,8 +523,6 @@ int filesize(ifstream &file)
 
 int read_into_buffer(ifstream &file, char *buffer[], int packet_size, int window_size, int begin)
 {
-    cout << "beginning" << endl;
-
     int i = begin;
     while (i != window_size)
     {
@@ -540,9 +534,6 @@ int read_into_buffer(ifstream &file, char *buffer[], int packet_size, int window
         }
         i++;
     }
-
-    cout << "ending" << endl;
-
     return file.gcount();
 }
 
