@@ -32,14 +32,18 @@ data - data to be sent
 */
 
 // global variables for user input
-string protocol;
+int protocol;
 int packetSize;
-string timeoutInterval;
+int timeoutInterval = 1;
 int windowSize;
 int rangeStart;
 int rangeEnd;
 string errors;
 double timeout;
+bool GBN = false;
+//bool SLW = false;
+bool SLW = true;
+bool SNW = false;
 std::chrono::time_point<std::chrono::steady_clock> first_sent;
 
 struct packet
@@ -57,11 +61,13 @@ struct state
     int seq_range;
     int file_size;
     int packet_size;
+    int window_size;
 };
 
 /* struct for recieving acknowledgements from reciever
 seq_num sequence number of acknowledged package
 nak - bool for problems - if true, package was damaged
+fin: the last thing that needed to be written was written in the reciever file
 */
 struct ack
 {
@@ -178,8 +184,13 @@ int main(int argc, char *argv[])
     file.open("testfile");
     int file_size = filesize(file);
 
-    state setup = {htonl(seq_range), (int)htonl(file_size), (int)htonl(packet_size)};
-
+    state setup = {};
+    if(GBN){
+        setup = {htonl(seq_range), (int)htonl(file_size), (int)htonl(packet_size), (int)htonl(1)};
+    }
+    else{
+        setup = {htonl(seq_range), (int)htonl(file_size), (int)htonl(packet_size), (int)htonl(window_size)};
+    }
     socketfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (socketfd < 0)
         perror("ERROR opening socket");
@@ -187,7 +198,12 @@ int main(int argc, char *argv[])
     if (::bind(socketfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
         perror("ERROR on binding");
     // for automatic timeout interval setting
-    auto start_now = std::chrono::steady_clock::now();
+    std::chrono::time_point<std::chrono::steady_clock> start_now;
+    std::chrono::time_point<std::chrono::steady_clock> start_end;
+    if (timeoutInterval == 1)
+    {
+        start_now = std::chrono::steady_clock::now();
+    }
     if ((sendto(socketfd, (struct state *)&setup, sizeof(setup), 0,
                 (const struct sockaddr *)&client_addr, sizeof(client_addr))) < 0)
     {
@@ -196,15 +212,20 @@ int main(int argc, char *argv[])
         do
         {
             // for automatic timeout interval setting
-            auto start_now = std::chrono::steady_clock::now();
+            if(timeoutInterval == 1){
+                start_now = std::chrono::steady_clock::now();
+            }
             fail = sendto(socketfd, (struct state *)&setup, sizeof(setup), 0,
                           (const struct sockaddr *)&client_addr, sizeof(client_addr));
         } while (fail < 0);
     }
 
     recvfrom(socketfd, &checking, sizeof(checking), 0, NULL, NULL);
-    auto start_end = std::chrono::steady_clock::now();
-    timeout = double(std::chrono::duration_cast<std::chrono::milliseconds>(start_end - start_now).count()) + 3.0;
+    if (timeoutInterval == 1)
+    {
+        start_end = std::chrono::steady_clock::now();
+        timeout = double(std::chrono::duration_cast<std::chrono::milliseconds>(start_end - start_now).count()) + 3.0;
+    }
 
     if (checking)
     {
@@ -254,11 +275,24 @@ int main(int argc, char *argv[])
             if (elapsed_seconds >= timeout /*&& recv_window[ii].sent && !recv_window[ii].recieved*/)
             {
                 cout << "A timeout for packet " << ntohl(window[ii].seq_num) << " recieved..." << endl;
-
-                window[ii].time_sent = std::chrono::steady_clock::now();
-                serialize(buffer[ii], window[ii], data_read, packet_size);
-                sendto(socketfd, buffer[ii], packet_size + struct_size(window[0]), 0,
-                       (const struct sockaddr *)&client_addr, sizeof(client_addr));
+                // Go back N
+                if (GBN)
+                {
+                    for (int jj = ii; jj < windowSize; jj++)
+                    {
+                        window[ii].time_sent = std::chrono::steady_clock::now();
+                        serialize(buffer[ii], window[ii], data_read, packet_size);
+                        sendto(socketfd, buffer[ii], packet_size + struct_size(window[0]), 0,
+                               (const struct sockaddr *)&client_addr, sizeof(client_addr));
+                    }
+                }
+                else if (SLW || SNW)
+                {
+                    window[ii].time_sent = std::chrono::steady_clock::now();
+                    serialize(buffer[ii], window[ii], data_read, packet_size);
+                    sendto(socketfd, buffer[ii], packet_size + struct_size(window[0]), 0,
+                           (const struct sockaddr *)&client_addr, sizeof(client_addr));
+                }
             }
         }
 
@@ -268,7 +302,8 @@ int main(int argc, char *argv[])
             // Set time_sent variable to time now
             window[i].time_sent = std::chrono::steady_clock::now();
             serialize(buffer[i], window[i], data_read, packet_size);
-            if(ntohl(window[i].seq_num) == 1){
+            if (ntohl(window[i].seq_num) == 1)
+            {
                 cout << "Losing packet " << ntohl(window[i].seq_num) << endl;
                 shift_index--;
                 recv_window[i].sent = true;
@@ -279,7 +314,8 @@ int main(int argc, char *argv[])
             shift_index--;
             recv_window[i].sent = true;
         }
-        while(!recv_flag){
+        while (!recv_flag)
+        {
         };
 
         printWindow(recv_window, window, window_size);
@@ -532,28 +568,61 @@ void userInput()
     {
         cout << "" << endl;
 
-        cout << "Type of protocol (GBN, SR, or SAW): ";
+        cout << "Type of protocol (Go-back N (0), Sliding Window(1), or Stop And Wait(2)): ";
         cin >> protocol;
+        cout << endl;
+        switch (protocol)
+        {
+        case 0:
+            GBN = true;
+        case 1:
+            SLW = true;
+        case 2:
+            SNW = true;
+        default:
+            cout << "Since you didn't give a correct number like a dumbass I choose stop and wait" << endl;
+            SNW = true;
+        }
 
         cout << "Size of packet: ";
         cin >> packetSize;
+        cout << endl;
 
-        cout << "Timeout interval (US or PC): ";
+        cout << "Timeout interval (User Selected(0) or Ping Calculated(1)): ";
         cin >> timeoutInterval;
-
+        cout << endl;
+        switch (timeoutInterval)
+        {
+        case 0:
+            cout << "What time (ms) do you want to timeout at? ";
+            cin >> timeout;
+            cout << endl;
+        default:
+            cout << "Yet again you are a dumbass so I choose ping calculated " << endl;
+            timeoutInterval = 1;
+        }
         cout << "Size of sliding window: ";
         cin >> windowSize;
+        cout << endl;
 
         cout << "Range of sequence numbers: ";
         cin >> rangeStart;
         cin >> rangeEnd;
+        cout << endl;
 
         cout << "Situational errrors: ";
         cin >> errors;
+        cout << endl;
     }
     else
     {
         // input default values for the above variables to run the program
+        SLW = true;
+        packetSize = 63000;
+        timeout = 4;
+        rangeStart = 0;
+        rangeEnd = 7;
+        errors = "none";
     }
 }
 

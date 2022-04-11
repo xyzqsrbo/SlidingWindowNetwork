@@ -17,6 +17,7 @@
 #include <array>
 #include <fstream>
 #include <vector>
+#include <functional>
 using namespace std;
 
 struct packet
@@ -33,6 +34,7 @@ struct state
     int seq_range;
     int file_size;
     int packet_size;
+    int window_size;
 };
 
 struct ack
@@ -82,17 +84,16 @@ int main(int argc, char *argv[])
     int socketfd, port;
     struct sockaddr_in server_addr;
     struct sockaddr_in client_addr;
-    const int window_size = 4;
+    //const int window_size = 4;
     int seq_range = 0;
     int packet_size = 0;
 
-    packet window[window_size];
-    bool recv_window[window_size] = {false};
+    
+    
     int start;
     int end;
     int current_packet = 0;
     int buffer_index = 0;
-    int shift_index = window_size;
     int begin = 0;
     int current_seq = 0;
     int i = 0;
@@ -127,13 +128,24 @@ int main(int argc, char *argv[])
         perror("ERROR on binding");
 
     cout << "Waiting for initial packet" << endl;
+    //This is the setup file to dictate our sizes from sender
     recvfrom(socketfd, (struct state *)&setup, sizeof(setup), 0, NULL, NULL);
     seq_range = ntohl(setup.seq_range);
     file_size = ntohl(setup.file_size);
     packet_size = ntohl(setup.packet_size);
 
+    //This is being weird what I am working on
+    const int window_size = ntohl(setup.window_size);
+
+    packet window[window_size];
+    bool recv_window[window_size];
+    for(int a = 0; a < window_size; a++){
+        recv_window[a] = false;
+    }
+    int shift_index = window_size;
+
     cout << "initial packet recieved" << endl;
-    cout << "Seq_range: " << seq_range << " file_size: " << file_size << " packet_size: " << packet_size << endl;
+    cout << "Seq_range: " << seq_range << " file_size: " << file_size << " packet_size: " << packet_size << " window_size: " << window_size << endl;
 
     char **buffer;
     buffer = new char *[window_size];
