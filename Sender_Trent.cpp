@@ -61,6 +61,7 @@ struct state {
     int file_size;
     int packet_size;
     int window_size;
+    bool GBN;
 };
 
 
@@ -155,6 +156,7 @@ int main(int argc, char *argv[])
    const int seq_range = 32;
     int packet_size = 51200;
     int shift_index = window_size;
+    bool GBN = true;
     packet window[window_size];
     char **buffer;
     buffer = new char* [window_size];
@@ -171,12 +173,12 @@ int main(int argc, char *argv[])
 
 
     ifstream file;
-    file.open ("big");
+    file.open ("small");
     int file_size = filesize(file);
 
 
 
-    state setup = {htonl(seq_range), htonl(file_size), htonl(packet_size), htonl(window_size)};
+    state setup = {htonl(seq_range), htonl(file_size), htonl(packet_size), htonl(window_size), htonl(GBN)};
 
     
 
@@ -243,7 +245,7 @@ int main(int argc, char *argv[])
             // Set time_sent variable to time now
             window[i].time_sent = std::chrono::steady_clock::now();
             serialize(buffer[i], window[i], data_read, packet_size);
-          /*  if(window[i].seq_num == 100663296){
+         /* if(window[i].seq_num == 100663296){
                   cout << "Losing packet " << window[i].seq_num << endl;
                 shift_index--;
                 recv_window[i].sent = true;
@@ -309,7 +311,7 @@ int main(int argc, char *argv[])
         {
             // cout << recv_data.second << " Bro " << start << " Bro "<<  endl;
             // Use formula for find_index in Reciever, for insertion
-            if(true) {
+            if(GBN) {
                 for(int k = 0; k < ind; k++) {
                     recv_window[k].recieved = true;
                 }
