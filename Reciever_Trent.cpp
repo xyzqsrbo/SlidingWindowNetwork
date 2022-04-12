@@ -20,11 +20,11 @@
 using namespace std;
 
 struct packet {
-    int ip = 0;
     int data_size;
     int checksum = 0;
     int seq_num;
-    int time_sent = 0;
+    int ip[4];
+    int port;
 };
 
 struct state {
@@ -56,7 +56,7 @@ int write_into_buffer(char* buffer[], fstream& MyFile, int packet_size, int arra
 
 int slidingCheck(bool recv_window[], int size);
 
-int shiftWindow(char* buffer[], bool recv_window[], packet window[],  int index, int size);
+int shiftWindow(char* buffer[], bool recv_window[], packet window[],  int index, int size, int buffer_size);
 
 bool check(int* start, int* end, int shift_index, int seq_range);
 
@@ -175,6 +175,7 @@ thread first(listen_for_packets, socketfd);
     int array_index = 0;
     unsigned int data_written = 0;
     packet temp;
+    
 
 while(data_written < file_size){
    
@@ -264,7 +265,7 @@ while(data_written < file_size){
 
     check(&start,&end,shift_index, seq_range);
 
-    shiftWindow(buffer, recv_window, window, shift_index, window_size);
+    shiftWindow(buffer, recv_window, window, shift_index, window_size, buffer_size);
 
     
 
@@ -373,7 +374,7 @@ bool check(int* start, int* end, int shift_index, int seq_range){
     
 }
 
-int shiftWindow(char *buffer[], bool recv_window[], packet window[], int index, int size)
+int shiftWindow(char *buffer[], bool recv_window[], packet window[], int index, int size , int buffer_size)
 {
     if (index == 0)
         return -1;
@@ -400,11 +401,11 @@ int shiftWindow(char *buffer[], bool recv_window[], packet window[], int index, 
 
 int struct_size(packet packet) {
     int size = 0;
-    size += sizeof(packet.ip);
     size += sizeof(packet.data_size);
     size += sizeof(packet.checksum);
     size += sizeof(packet.seq_num);
-    size += sizeof(packet.time_sent);
+    size += sizeof(packet.ip);
+    size += sizeof(packet.port);
     return size;
 }
 
