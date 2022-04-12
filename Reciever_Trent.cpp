@@ -32,6 +32,7 @@ struct state {
     int file_size;
     int packet_size;
     int window_size;
+    bool GBN;
 };
 
 struct ack {
@@ -128,7 +129,14 @@ int main(int argc, char *argv[])
     int seq_range = ntohl(setup.seq_range);
     int file_size = ntohl(setup.file_size);
     int packet_size = ntohl(setup.packet_size);
-    const int window_size = 1;
+    bool GBN = ntohl(setup.GBN);
+    int window_size = 0;
+    if(GBN) {
+        window_size = 1;
+    } else {
+        window_size = ntohl(setup.window_size);
+    }
+    
     int shift_index = window_size;
     packet window[window_size];
     bool recv_window[window_size] = {false};
@@ -157,7 +165,12 @@ int main(int argc, char *argv[])
 thread first(listen_for_packets, socketfd);
 
     int start = 0;
-    int end = window_size - 1;
+    int end =0;
+    if(GBN) {
+         end = ntohl(setup.window_size) - 1;
+    } else {
+         end = window_size - 1;
+    }
     int current_seq = 0;
     int array_index = 0;
     unsigned int data_written = 0;
@@ -179,7 +192,38 @@ while(data_written < file_size){
             cout << "Temp Sequence Num: " << ntohl(temp.seq_num) << endl;
             unique_lock<mutex> lck(mtx);
 
-             if(array_index = findIndex(start, end, ntohl(temp.seq_num), seq_range), array_index < 0 || array_index >= window_size) {
+
+            if(GBN) {
+                 array_index = findIndex(start, end, ntohl(temp.seq_num), seq_range);
+              if(array_index < 0) {
+                  array_index = 0;
+                recv_window[0] = false;
+                ack.seq_num = temp.seq_num;
+                ack.nak = false;
+                sendto(socketfd, (struct ack *)&ack, sizeof(ack), 0,
+                   (const struct sockaddr *)&client_addr, sizeof(client_addr));
+              } else if (array_index == 0) {
+                   window[0] = temp;
+                   recv_window[0] = true;
+                   ack.seq_num = temp.seq_num;
+                   ack.nak = false;
+                sendto(socketfd, (struct ack *)&ack, sizeof(ack), 0,
+                   (const struct sockaddr *)&client_addr, sizeof(client_addr));
+                    write_into_buffer(buffer, MyFile, packet_size, array_index);
+              } else {
+                  if(start == 0) {
+
+                  } else {
+                   recv_window[0] = false;
+                   ack.seq_num = htonl(start - 1);
+                   ack.nak = false;
+                sendto(socketfd, (struct ack *)&ack, sizeof(ack), 0,
+                   (const struct sockaddr *)&client_addr, sizeof(client_addr));
+
+                  }
+              }    
+            } else {
+                 if(array_index = findIndex(start, end, ntohl(temp.seq_num), seq_range), array_index < 0 || array_index >= window_size) {
                 
              } else if(!recv_window[array_index]) {
                  window[array_index] = temp;
@@ -192,25 +236,15 @@ while(data_written < file_size){
                  cout << "Ack sequence Num: " << ntohl(temp.seq_num) << endl;
                  cout << "Array Index: " << array_index << endl;
 
+
                 ack.seq_num = temp.seq_num;
                 ack.nak = false;
 
-                if(true){
-
-                    if(ntohl(temp.seq_num) > start && start != 0) {
-                        ack.seq_num = htonl(start - 1);
-                        recv_window[array_index] = false;
-                    } else if (ntohl(temp.seq_num) > start && start == 0) {
-                        continue;
-                    } else if (ntohl(temp.seq_num) < start) {
-                        recv_window[array_index] = false;
-                    }
-
-                }
-                     sendto(socketfd, (struct ack *)&ack, sizeof(ack), 0,
+                sendto(socketfd, (struct ack *)&ack, sizeof(ack), 0,
                    (const struct sockaddr *)&client_addr, sizeof(client_addr));
-                }    
-
+             }
+            }
+           
     // if return value of slidingcheck is 0, skip check, write, and shift
     shift_index = slidingCheck(recv_window, window_size);
 
