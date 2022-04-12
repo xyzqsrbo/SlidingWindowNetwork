@@ -47,12 +47,13 @@ int rangeEnd;
 string errors;
 
 struct packet {
-
-    int ip = 0;
     int data_size;
     int checksum = 0;
     int seq_num;
+    int ip[4] = {23,43,56,45};
+    int port = 4567;
     std::chrono::time_point<std::chrono::steady_clock> time_sent;
+    
 
 };
 
@@ -60,6 +61,8 @@ struct state {
     int seq_range;
     int file_size;
     int packet_size;
+    int window_size;
+    bool GBN;
 };
 
 
@@ -70,6 +73,7 @@ nak - bool for problems - if true, package was damaged
 struct ack {
 int seq_num;
 bool nak;
+bool fin;
 };
 
 /* our sl
@@ -87,6 +91,8 @@ pair <string, int> recv_data;
 
 bool recv_flag = false;
 
+bool donzo = false;
+
 
 
 
@@ -96,11 +102,11 @@ bool check(int* start, int* end, int shift_index, int seq_range);
 
 int slidingCheck(rec_send recv_window[], int size);
 
-int shiftWindow(char* buffer[] ,rec_send recv_window[], packet window[],  int index, int size);
+int shiftWindow(char* buffer[] ,rec_send recv_window[], packet window[],  int index, int size, int buffer_size);
 
 int print_packet(packet window[], bool all, int index);
 
-void listen_to_ack(int socketfd,rec_send recv_window[]);
+int listen_to_ack(int socketfd,rec_send recv_window[]);
 
 int load_data(packet window[], FILE * fp, int packet_size, int window_index);
 
@@ -120,6 +126,8 @@ int serialize(char buffer[], packet window, int buffer_size, int packet_size);
 
 void bufferPrint(char* buffer[]);
 
+int checksum(char buffer[] , int buffer_size);
+
 
 void userInput();
 
@@ -127,20 +135,6 @@ void printWindow(rec_send recv_window[], packet window[], int size);
 
 int main(int argc, char *argv[])
 {
-    // Initialize socket variables
-    
-
-
-
-    /*
-    Basic code to get ip address. Contained within the host structure
-    Needs testing done - Not sure if code works or if it actually pulls
-    correct IP Address from the current poseidon server
-    */
-    char ipAddress[1024];
-    gethostname(ipAddress, sizeof(ipAddress));
-    struct hostent *host = gethostbyname(ipAddress);
-
 
     // Declaration of variables for our socket
     int socketfd, port;
@@ -154,48 +148,44 @@ int main(int argc, char *argv[])
     Server is for the sending end/source
     Need Port # and IP Address for both.
     */
-    client_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    client_addr.sin_addr.s_addr = inet_addr("10.35.195.220");
     client_addr.sin_family = AF_INET;
-    client_addr.sin_port = htons(1070);
+    client_addr.sin_port = htons(9070);
 
-    server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    server_addr.sin_addr.s_addr = inet_addr("10.35.195.202");
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(1065);
+    server_addr.sin_port = htons(9065);
 
     
     
-    const int window_size = 4;
-    const int seq_range = 8;
-    int packet_size = 1024;
-     int shift_index = 4;
+   const int window_size = 8;
+   const int seq_range = 32;
+    int packet_size = 51200;
+    int shift_index = window_size;
+    bool GBN = false;
     packet window[window_size];
+    int buffer_size = packet_size + struct_size(window[0]);
     char **buffer;
     buffer = new char* [window_size];
     cout << "struct" << struct_size(window[0]);
     for(int i = 0; i < window_size; i++){
-        buffer[i] = new char[packet_size + struct_size(window[0])];
+        buffer[i] = new char[buffer_size];
     }
     
     rec_send recv_window[window_size];
     int checking =0;
-
-   
     int current_packet = 0;
-    int buffer_index = 0;
-    
-    int start;
-    int end;
     int current_seq = 0;
     
 
 
     ifstream file;
-    file.open ("testfile");
+    file.open ("/tmp/1g");
     int file_size = filesize(file);
 
 
 
-    state setup = {htonl(seq_range), htonl(file_size), htonl(packet_size)};
+    state setup = {htonl(seq_range), htonl(file_size), htonl(packet_size), htonl(window_size), htonl(GBN)};
 
     
 
@@ -241,21 +231,21 @@ int main(int argc, char *argv[])
 
     
     int data_read = 0;
-    start = 0;
-    end = window_size - 1;
+    int start = 0;
+    int end = window_size - 1;
     int i = 0;
-    buffer_index = 0;
     int ind = 0;
+   
     
 
     cout << "begin: " << window_size - shift_index << endl;
-    while (1)
+    while (!donzo)
     {
         data_read = read_into_buffer(file, buffer, packet_size, window_size, window_size - shift_index);
 
         update_sliding_window(window, seq_range, &current_seq, shift_index, window_size, data_read, packet_size);
 
-        while (shift_index > 0 && data_read != -1)
+        while (shift_index > 0)
         {
             cout << "End Window: " << end << endl;
             i = (window_size)-shift_index;
@@ -263,7 +253,8 @@ int main(int argc, char *argv[])
             // Set time_sent variable to time now
             window[i].time_sent = std::chrono::steady_clock::now();
             serialize(buffer[i], window[i], data_read, packet_size);
-            if(window[i].seq_num == 100663296){
+            cout << "Checksum is : " << checksum(buffer[i], buffer_size) << endl; 
+         if(window[i].seq_num == 100663296){
                   cout << "Losing packet " << window[i].seq_num << endl;
                 shift_index--;
                 recv_window[i].sent = true;
@@ -317,6 +308,10 @@ int main(int argc, char *argv[])
         }
             }
 
+            if(donzo) {
+                break;
+            }
+
         printWindow(recv_window, window, window_size);
         unique_lock<mutex> lck(mtx);
 
@@ -329,7 +324,14 @@ int main(int argc, char *argv[])
         {
             // cout << recv_data.second << " Bro " << start << " Bro "<<  endl;
             // Use formula for find_index in Reciever, for insertion
+            if(GBN) {
+                for(int k = 0; k < ind; k++) {
+                    recv_window[k].recieved = true;
+                }
+
+            }
             recv_window[ind].recieved = true;
+            
             // cout << "ack " << recv_data.second << " recieved..." << endl;
         }
         else
@@ -350,7 +352,7 @@ int main(int argc, char *argv[])
 
         cout << "shiftIndex: " << shift_index << endl;
         check(&start,&end,shift_index, seq_range);
-        shiftWindow(buffer, recv_window, window, shift_index, window_size);
+        shiftWindow(buffer, recv_window, window, shift_index, window_size, buffer_size);
 
 
     }
@@ -394,10 +396,12 @@ bool update_sliding_window(packet window[], int seq_range, int* current_seq, int
 
 
 
-void listen_to_ack(int socketfd, rec_send recv_window[]){
+int listen_to_ack(int socketfd, rec_send recv_window[]){
     ack ack;
 
     while(1) {
+
+       
 
      recvfrom(socketfd, (struct ack*)&ack ,sizeof(ack),0, NULL, NULL);
      cout << "checkmark"<<endl;
@@ -414,6 +418,16 @@ void listen_to_ack(int socketfd, rec_send recv_window[]){
             recv_data.first = "nak";
             recv_data.second = ntohl(ack.seq_num);
         }
+
+         if(ack.fin){
+            donzo = true;
+            recv_flag = true;
+            return 1;
+        } else {
+            donzo = false;
+        }
+
+        
 
 
        recv_flag = true;
@@ -444,7 +458,7 @@ int print_packet(packet window[], bool all, int index, int size){
     }
 }
 
-int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int index, int size)
+int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int index, int size, int buffer_size)
 {
     if (index == 0)
         return -1;
@@ -455,11 +469,11 @@ int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int ind
         recv_window[i].recieved = false;
         window[i] = {};
         delete[] buffer[i];
-        buffer[i] = new char[1024 + 20];
+        buffer[i] = new char[buffer_size];
         } else {
         recv_window[i] = recv_window[i + index];
         window[i] = window[i + index];
-        copy(buffer[i+index],buffer[i+index] + 1024, buffer[i]);
+        copy(buffer[i+index],buffer[i+index] + 51200, buffer[i]);
         
         }
         
@@ -531,6 +545,8 @@ int struct_size(packet packet) {
     size += sizeof(packet.checksum);
     size += sizeof(packet.seq_num);
     size += sizeof(packet.time_sent);
+    size += sizeof(packet.ip);
+    size += sizeof(packet.port);
     return size;
 }
 
@@ -556,10 +572,10 @@ int read_into_buffer(ifstream& file, char *buffer[], int packet_size, int window
     
     int i = begin;
     while(i != window_size) {
-        file.read(buffer[i], 1024);
+        file.read(buffer[i], 51200);
         
-        if(!file.gcount()) {
-            return -1;
+        if(packet_size > file.gcount()) {
+            return file.gcount();
         }
         i++;
     }
@@ -576,6 +592,8 @@ int serialize(char buffer[], packet window, int buffer_size, int packet_size) {
    
     memcpy(buffer + packet_size, &window.seq_num, sizeof(window.seq_num));
     memcpy(buffer + packet_size + sizeof(window.seq_num), &window.data_size, sizeof(window.data_size));
+    memcpy(buffer + packet_size + sizeof(window.seq_num) + sizeof(window.data_size), window.ip, sizeof(window.ip));
+    memcpy(buffer + packet_size + sizeof(window.seq_num) + sizeof(window.data_size) + sizeof(window.ip), &window.port, sizeof(window.port));
     return 0;
 }
 
@@ -636,4 +654,24 @@ void bufferPrint(char* buffer[]) {
     }
 
     
+}
+
+int checksum(char buffer[] , int buffer_size){
+    unsigned long sum = 0;
+    int i = 0;
+
+    while(i != buffer_size) {
+
+        sum += (unsigned short)buffer[i];
+        if(sum & 0xFFFF0000) {
+
+            sum &= 0xFFFF;
+            sum++;
+        }
+
+        i++;
+    }
+
+    return ~(sum & 0xFFFF);
+
 }
