@@ -47,12 +47,13 @@ int rangeEnd;
 string errors;
 
 struct packet {
-
-    int ip = 0;
     int data_size;
     int checksum = 0;
     int seq_num;
+    int ip[4] = {23,43,56,45};
+    int port = 4567;
     std::chrono::time_point<std::chrono::steady_clock> time_sent;
+    
 
 };
 
@@ -98,7 +99,7 @@ bool check(int* start, int* end, int shift_index, int seq_range);
 
 int slidingCheck(rec_send recv_window[], int size);
 
-int shiftWindow(char* buffer[] ,rec_send recv_window[], packet window[],  int index, int size);
+int shiftWindow(char* buffer[] ,rec_send recv_window[], packet window[],  int index, int size, int buffer_size);
 
 int print_packet(packet window[], bool all, int index);
 
@@ -121,6 +122,8 @@ bool update_sliding_window(packet window[], int seq_range, int* current_seq, int
 int serialize(char buffer[], packet window, int buffer_size, int packet_size);
 
 void bufferPrint(char* buffer[]);
+
+int checksum(char buffer[] , int buffer_size);
 
 
 void userInput();
@@ -158,11 +161,12 @@ int main(int argc, char *argv[])
     int shift_index = window_size;
     bool GBN = true;
     packet window[window_size];
+    int buffer_size = packet_size + struct_size(window[0]);
     char **buffer;
     buffer = new char* [window_size];
     cout << "struct" << struct_size(window[0]);
     for(int i = 0; i < window_size; i++){
-        buffer[i] = new char[packet_size + struct_size(window[0])];
+        buffer[i] = new char[buffer_size];
     }
     
     rec_send recv_window[window_size];
@@ -173,7 +177,7 @@ int main(int argc, char *argv[])
 
 
     ifstream file;
-    file.open ("small");
+    file.open ("big");
     int file_size = filesize(file);
 
 
@@ -245,13 +249,14 @@ int main(int argc, char *argv[])
             // Set time_sent variable to time now
             window[i].time_sent = std::chrono::steady_clock::now();
             serialize(buffer[i], window[i], data_read, packet_size);
-         /* if(window[i].seq_num == 100663296){
+            cout << "Checksum is : " << checksum(buffer[i], buffer_size) << endl; 
+         if(window[i].seq_num == 100663296){
                   cout << "Losing packet " << window[i].seq_num << endl;
                 shift_index--;
                 recv_window[i].sent = true;
                 continue;
             
-            } */
+            }
             cout << "buffer sent " << buffer[i][0] << buffer[i][1] << buffer[i][2] << endl;
             sendto(socketfd, buffer[i], packet_size + struct_size(window[0]), 0, 
                                 (const struct sockaddr *) &client_addr, sizeof(client_addr));
@@ -339,7 +344,7 @@ int main(int argc, char *argv[])
 
         cout << "shiftIndex: " << shift_index << endl;
         check(&start,&end,shift_index, seq_range);
-        shiftWindow(buffer, recv_window, window, shift_index, window_size);
+        shiftWindow(buffer, recv_window, window, shift_index, window_size, buffer_size);
 
 
     }
@@ -433,7 +438,7 @@ int print_packet(packet window[], bool all, int index, int size){
     }
 }
 
-int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int index, int size)
+int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int index, int size, int buffer_size)
 {
     if (index == 0)
         return -1;
@@ -520,6 +525,8 @@ int struct_size(packet packet) {
     size += sizeof(packet.checksum);
     size += sizeof(packet.seq_num);
     size += sizeof(packet.time_sent);
+    size += sizeof(packet.ip);
+    size += sizeof(packet.port);
     return size;
 }
 
@@ -565,6 +572,8 @@ int serialize(char buffer[], packet window, int buffer_size, int packet_size) {
    
     memcpy(buffer + packet_size, &window.seq_num, sizeof(window.seq_num));
     memcpy(buffer + packet_size + sizeof(window.seq_num), &window.data_size, sizeof(window.data_size));
+    memcpy(buffer + packet_size + sizeof(window.seq_num) + sizeof(window.data_size), window.ip, sizeof(window.ip));
+    memcpy(buffer + packet_size + sizeof(window.seq_num) + sizeof(window.data_size) + sizeof(window.ip), &window.port, sizeof(window.port));
     return 0;
 }
 
@@ -625,4 +634,24 @@ void bufferPrint(char* buffer[]) {
     }
 
     
+}
+
+int checksum(char buffer[] , int buffer_size){
+    unsigned long sum = 0;
+    int i = 0;
+
+    while(i != buffer_size) {
+
+        sum += (unsigned short)buffer[i];
+        if(sum & 0xFFFF0000) {
+
+            sum &= 0xFFFF;
+            sum++;
+        }
+
+        i++;
+    }
+
+    return ~(sum & 0xFFFF);
+
 }
