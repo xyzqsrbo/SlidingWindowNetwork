@@ -31,6 +31,7 @@ struct state {
     int seq_range;
     int file_size;
     int packet_size;
+    int window_size;
 };
 
 struct ack {
@@ -42,10 +43,12 @@ mutex mtx;
 
 condition_variable seq_alert;
 condition_variable ack_alert;
-char incoming[64000];
+char incoming[512000];
 
 
 bool ack_flag = false;
+
+bool finished_flag = false;
 
 
 int write_into_buffer(char* buffer[], fstream& MyFile, int packet_size, int array_index);
@@ -56,7 +59,7 @@ int shiftWindow(char* buffer[], bool recv_window[], packet window[],  int index,
 
 bool check(int* start, int* end, int shift_index, int seq_range);
 
-int listen_for_packets(packet window[], bool recv_window[], int socketfd);
+int listen_for_packets(int socketfd);
 
 int filesize(fstream& file);
 
@@ -82,28 +85,16 @@ int main(int argc, char *argv[])
     int socketfd, port;
     struct sockaddr_in server_addr;
     struct sockaddr_in client_addr;
-    const int window_size = 4;
-    int seq_range = 0;
-    int packet_size = 0;
+  
     
-    packet window[window_size];
-    bool recv_window[window_size];
-    int start;
-    int end;
-    int current_packet = 0;
-    int buffer_index = 0;
-    int shift_index = window_size;
-    int begin = 0;
-    int current_seq = 0;
-    int i = 0;
-    int file_size = 0;
-    int data_written = 0;
-    int array_index = 0;
-    packet temp;
+   
+    
+   
+    
+   
+    
 	
     fstream MyFile("stupid.txt");
-    
-    socklen_t length;
     
     socketfd =  socket(AF_INET, SOCK_DGRAM, 0);
      if (socketfd < 0) 
@@ -114,10 +105,14 @@ int main(int argc, char *argv[])
     server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(1070);
-
     client_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     client_addr.sin_family = AF_INET;
     client_addr.sin_port = htons(1065);
+
+
+
+
+
     state setup;
     ack ack;
     int checking = htonl(1);
@@ -128,22 +123,26 @@ int main(int argc, char *argv[])
 
     cout << "Waiting for initial packet" << endl;
     recvfrom(socketfd,(struct state*)&setup,sizeof(setup),0, NULL, NULL);
-    seq_range = ntohl(setup.seq_range);
-    file_size = ntohl(setup.file_size);
-    packet_size = ntohl(setup.packet_size);
+
+
+    int seq_range = ntohl(setup.seq_range);
+    int file_size = ntohl(setup.file_size);
+    int packet_size = ntohl(setup.packet_size);
+    const int window_size = 1;
+    int shift_index = window_size;
+    packet window[window_size];
+    bool recv_window[window_size] = {false};
+    int buffer_size = packet_size + struct_size(window[0]);
 
 
     cout << "initial packet recieved" << endl;
     cout << " Seq_range: " << seq_range << "file_size: " << file_size << "packet_size: " << packet_size << endl;
-
-
-
-
-
+    
+    
     char **buffer;
     buffer = new char *[window_size];
     for(int i = 0; i < window_size; i++){
-        buffer[i] = new char[packet_size + struct_size(window[0])];
+        buffer[i] = new char[buffer_size];
     }
 
 
@@ -155,15 +154,19 @@ int main(int argc, char *argv[])
 
 
 
-thread first(listen_for_packets, window, recv_window, socketfd);
+thread first(listen_for_packets, socketfd);
 
- start = 0;
-    end = window_size - 1;
+    int start = 0;
+    int end = window_size - 1;
+    int current_seq = 0;
+    int array_index = 0;
+    unsigned int data_written = 0;
+    packet temp;
+
 while(data_written < file_size){
-    int j = 0;
    
 
-    while(j != window_size){
+
         update_sliding_window(window, seq_range, &current_seq, shift_index, window_size, packet_size);
         shift_index = 0;
 
@@ -173,7 +176,7 @@ while(data_written < file_size){
             cout << "packet_size: " << packet_size << " window_size: " << endl;
             serialize(&temp, packet_size);
 
-            cout << "Temp Sequence Num: " << temp.seq_num << endl;
+            cout << "Temp Sequence Num: " << ntohl(temp.seq_num) << endl;
             unique_lock<mutex> lck(mtx);
 
              if(array_index = findIndex(start, end, ntohl(temp.seq_num), seq_range), array_index < 0 || array_index >= window_size) {
@@ -189,17 +192,24 @@ while(data_written < file_size){
                  cout << "Ack sequence Num: " << ntohl(temp.seq_num) << endl;
                  cout << "Array Index: " << array_index << endl;
 
-
                 ack.seq_num = temp.seq_num;
                 ack.nak = false;
 
-                sendto(socketfd, (struct ack *)&ack, sizeof(ack), 0,
+                if(true){
+
+                    if(ntohl(temp.seq_num) > start && start != 0) {
+                        ack.seq_num = htonl(start - 1);
+                        recv_window[array_index] = false;
+                    } else if (ntohl(temp.seq_num) > start && start == 0) {
+                        continue;
+                    } else if (ntohl(temp.seq_num) < start) {
+                        recv_window[array_index] = false;
+                    }
+
+                }
+                     sendto(socketfd, (struct ack *)&ack, sizeof(ack), 0,
                    (const struct sockaddr *)&client_addr, sizeof(client_addr));
-             }
-            
-
-
-    
+                }    
 
     // if return value of slidingcheck is 0, skip check, write, and shift
     shift_index = slidingCheck(recv_window, window_size);
@@ -212,6 +222,9 @@ while(data_written < file_size){
     cout << "data Written " << data_written << endl; 
     
      if(data_written >= file_size) {
+         cout << "god as my witness" << endl;
+         finished_flag = 1;
+          seq_alert.notify_all();
         break;
     }
 
@@ -226,12 +239,14 @@ while(data_written < file_size){
     seq_alert.notify_all();
     
     
-    j++;
-    }
+    
+    
     
     
 
 }
+first.join();
+cout << "file_size: " << file_size << endl;
 MyFile.close();
     return 0;
 }
@@ -252,7 +267,9 @@ int write_into_buffer(char* buffer[], fstream& MyFile , int packet_size, int arr
 int findIndex(int start, int end, int seq_num, int seq_range)
 {
     cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << seq_num << endl;
-    if (start < end || seq_num > end)
+    if( start == end) {
+        return 0;
+    } else if (start < end || seq_num > end)
     {
         return (seq_num - start);
     } 
@@ -265,9 +282,10 @@ int findIndex(int start, int end, int seq_num, int seq_range)
 
 
 
-int listen_for_packets(packet window[], bool recv_window[], int socketfd){
+int listen_for_packets(int socketfd){
     
     while(1) {
+
 
 
      recvfrom(socketfd,incoming,sizeof(incoming),0, NULL, NULL);
@@ -279,6 +297,11 @@ int listen_for_packets(packet window[], bool recv_window[], int socketfd){
 
         ack_flag = true;
        seq_alert.wait(lck);
+
+       if(finished_flag){
+           cout << "thread finished" << endl;
+           return 1;
+       }
        
 
     }
@@ -326,11 +349,11 @@ int shiftWindow(char *buffer[], bool recv_window[], packet window[], int index, 
         recv_window[i] = false;
         window[i] = {};
         delete[] buffer[i];
-        buffer[i] = new char[1024+20];
+        buffer[i] = new char[51200+20];
         } else {
         recv_window[i] = recv_window[i + index];
         window[i] = window[i + index];
-        copy(buffer[i+index],buffer[i+index] + 1024, buffer[i]);
+        copy(buffer[i+index],buffer[i+index] + 51200, buffer[i]);
         }
         
     }
@@ -374,6 +397,8 @@ int write_into_file(fstream& file, char* buffer[], packet window[], int window_s
         cout << "data_size: " << ntohl(window[i].data_size) << endl;
         file.write(buffer[i], ntohl(window[i].data_size));
 
+        cout << "data actually written" << file.tellg() << endl;
+
         if(file.tellg() >= file_size) {
             
             return file_size;
@@ -382,7 +407,7 @@ int write_into_file(fstream& file, char* buffer[], packet window[], int window_s
     }
 
 
-    return (i * ntohl(window[i -1].data_size));
+    return (i * 51200);
 }
 
 int serialize(packet* window, int packet_size) {
