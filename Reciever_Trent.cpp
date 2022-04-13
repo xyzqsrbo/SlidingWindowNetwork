@@ -338,7 +338,7 @@ int write_into_buffer(char *buffer[], fstream &MyFile, int packet_size, int arra
 // for this method, check return. if its negative or if its greater than end, its a past value
 int findIndex(int start, int end, int seq_num, int seq_range)
 {
-    cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << seq_num << endl;
+    //cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << seq_num << endl;
     if (start == end)
     {
         return 0;
@@ -368,7 +368,7 @@ int listen_for_packets(int socketfd)
 
         if (finished_flag)
         {
-            cout << "thread finished" << endl;
+            //cout << "thread finished" << endl;
             return 1;
         }
     }
@@ -463,10 +463,10 @@ int write_into_file(fstream &file, char *buffer[], packet window[], int window_s
     int i = 0;
     while (i != shift_index)
     {
-        cout << "data_size: " << ntohl(window[i].data_size) << endl;
+        //cout << "data_size: " << ntohl(window[i].data_size) << endl;
         file.write(buffer[i], ntohl(window[i].data_size));
 
-        cout << "data actually written" << file.tellg() << endl;
+        //cout << "data actually written" << file.tellg() << endl;
 
         if (file.tellg() >= file_size)
         {
@@ -506,21 +506,21 @@ bool update_sliding_window(packet window[], int seq_range, int *current_seq, int
 }
 void printWindow(bool recv_window[], packet window[], int size)
 {
-    cout << " recv_window: ";
+    //cout << " recv_window: ";
     for (int i = 0; i < size; i++)
     {
-        cout << recv_window[i] << " ";
+        //cout << recv_window[i] << " ";
     }
-    cout << "\n"
-         << endl;
+   // cout << "\n"
+     //    << endl;
 
-    cout << " window_seq: ";
+    //cout << " window_seq: ";
 
     for (int i = 0; i < size; i++)
     {
-        cout << ntohl(window[i].seq_num) << " ";
+        //cout << ntohl(window[i].seq_num) << " ";
     }
 
-    cout << "\n"
-         << endl;
+    //cout << "\n"
+         //<< endl;
 }

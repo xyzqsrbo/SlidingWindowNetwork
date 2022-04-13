@@ -36,8 +36,7 @@ int packet_size;
 int timeoutInterval;
 int timeout;
 int windowSize;
-int rangeStart;
-int rangeEnd;
+int seq_range;
 string errors;
 int retransmitted = 0;
 bool GBN = false;
@@ -134,6 +133,10 @@ int main(int argc, char *argv[])
 {
 	userInput();
 
+	if(SW){
+		windowSize = 1;
+	}
+
     // Declaration of variables for our socket
     int socketfd, port;
     struct sockaddr_in server_addr, client_addr;
@@ -153,12 +156,14 @@ int main(int argc, char *argv[])
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(9065);
 
-    const int window_size = 8;
-    const int seq_range = 32;
+    const int window_size = windowSize;
+    //const int seq_range = 32;
     //int packet_size = 51200;
     int shift_index = window_size;
-    packet window[window_size];
-    int buffer_size = packet_size + struct_size(window[0]);
+	packet *window;
+    //packet window[window_size];
+    window = new packet[window_size];
+	int buffer_size = packet_size + struct_size(window[0]);
     char **buffer;
     buffer = new char *[window_size];
     cout << "struct" << struct_size(window[0]);
@@ -166,8 +171,10 @@ int main(int argc, char *argv[])
     {
         buffer[i] = new char[buffer_size];
     }
-
-    rec_send recv_window[window_size];
+	
+	rec_send *recv_window;
+    //rec_send recv_window[window_size];
+	recv_window = new rec_send[window_size];
     int checking = 0;
 
     int current_packet = 0;
@@ -524,7 +531,10 @@ int findIndex(int start, int end, int seq_num, int seq_range)
 {
 
     //cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << seq_num << endl;
-    if (start < end || seq_num > end)
+    if(start == end){
+		return 0;
+	}
+	if (start < end || seq_num > end)
     {
         return seq_num - start;
     }
@@ -691,12 +701,22 @@ void userInput()
 				timeoutInterval = 1;
 		}   
     }
+		if(!SW){
+			cout << "Size of window: ";
+			cin >> windowSize;
+			cout << endl;
+		}
 
-		int windowSize;
+
 		cout << "Size of sequence numbers: ";
-		cin >> rangeStart;
-		cin >> rangeEnd;
+		cin >> seq_range;
 		cout << endl;
+
+		char want;
+
+		cout << "Do you want to simulate ack loss? (y/n) ";
+		cin >> want;
+		if (want == 'y') {
 
 		// losing acks
         int error;
@@ -719,7 +739,13 @@ void userInput()
             cout << endl;
             ack_errors.push_back(error);
         }
+		}
 
+	
+		cout << "Do you want to simulate packet loss? (y/n) ";
+		cin >> want;
+		if (want == 'y') {
+		int error;
         // losing packets
         cout << "Packet sequence number you want to lose: ";
         cin >> error;
@@ -740,12 +766,18 @@ void userInput()
             cout << endl;
             packet_errors.push_back(error);
         }
+		}
 
 
 	}
     else
     {
         // input default values for the above variables to run the program
+		SW = true;
+        packet_size = 51200;
+        timeout = 4;
+        seq_range = 32;
+		windowSize = 4;
     }
 }
 
