@@ -284,7 +284,7 @@ int main(int argc, char *argv[])
 
         check(&start, &end, shift_index, seq_range);
 
-        shiftWindow(buffer, recv_window, window, shift_index, window_size, buffer_size);
+        shiftWindow(buffer, recv_window, window, shift_index, window_size, packet_size, struct_size(window[0]));
 		
 		string windowCurrent = "[";
 		for (int i = 0; i < window_size - 1; i++) {
@@ -405,7 +405,7 @@ bool check(int *start, int *end, int shift_index, int seq_range)
     }
 }
 
-int shiftWindow(char *buffer[], bool recv_window[], packet window[], int index, int size, int buffer_size)
+int shiftWindow(char *buffer[], bool recv_window[], packet window[], int index, int size, int packet_size, int structsize)
 {
     if (index == 0)
         return -1;
@@ -416,13 +416,13 @@ int shiftWindow(char *buffer[], bool recv_window[], packet window[], int index, 
             recv_window[i] = false;
             window[i] = {};
             delete[] buffer[i];
-            buffer[i] = new char[51200 + 20];
+            buffer[i] = new char[packet_size + structsize];
         }
         else
         {
             recv_window[i] = recv_window[i + index];
             window[i] = window[i + index];
-            copy(buffer[i + index], buffer[i + index] + 51200, buffer[i]);
+            copy(buffer[i + index], buffer[i + index] + packet_size, buffer[i]);
         }
     }
     return 0;
