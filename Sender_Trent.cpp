@@ -32,12 +32,20 @@ data - data to be sent
 
 // global variables for user input
 string protocol;
-int packetSize;
-string timeoutInterval;
+int packet_size;
+int timeoutInterval;
+int timeout;
 int windowSize;
 int rangeStart;
 int rangeEnd;
 string errors;
+int retransmitted = 0;
+bool GBN = false;
+bool SW = false;
+bool SR = false;
+vector<bool> ack_errors;
+vector<bool> packet_errors;
+
 
 struct packet
 {
@@ -47,6 +55,7 @@ struct packet
     int ip[4] = {23, 43, 56, 45};
     int port = 4567;
     std::chrono::time_point<std::chrono::steady_clock> time_sent;
+	bool send_ack =true;
 };
 
 struct state
@@ -123,6 +132,7 @@ void printWindow(rec_send recv_window[], packet window[], int size);
 
 int main(int argc, char *argv[])
 {
+	userInput();
 
     // Declaration of variables for our socket
     int socketfd, port;
@@ -145,9 +155,8 @@ int main(int argc, char *argv[])
 
     const int window_size = 8;
     const int seq_range = 32;
-    int packet_size = 51200;
+    //int packet_size = 51200;
     int shift_index = window_size;
-    bool GBN = false;
     packet window[window_size];
     int buffer_size = packet_size + struct_size(window[0]);
     char **buffer;
@@ -160,6 +169,7 @@ int main(int argc, char *argv[])
 
     rec_send recv_window[window_size];
     int checking = 0;
+
     int current_packet = 0;
     int current_seq = 0;
 
@@ -176,6 +186,15 @@ int main(int argc, char *argv[])
     if (::bind(socketfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
         perror("ERROR on binding");
 
+
+	std::chrono::time_point<std::chrono::steady_clock> start_now;
+	std::chrono::time_point<std::chrono::steady_clock> start_end;
+
+
+	if (timeoutInterval == 1) {
+		start_now = std::chrono::steady_clock::now();
+	}
+
     if ((sendto(socketfd, (struct state *)&setup, sizeof(setup), 0,
                 (const struct sockaddr *)&client_addr, sizeof(client_addr))) < 0)
     {
@@ -189,6 +208,13 @@ int main(int argc, char *argv[])
     }
 
     recvfrom(socketfd, &checking, sizeof(checking), 0, NULL, NULL);
+
+	if (timeoutInterval == 1) {
+		start_end = std::chrono::steady_clock::now();
+		timeout = double(std::chrono::duration_cast<std::chrono::milliseconds>(start_end - start_now).count()) +3.0;
+	}
+
+
     if (checking)
     {
         cout << "Reciever has gotten initial setup" << endl;
@@ -197,40 +223,67 @@ int main(int argc, char *argv[])
     thread first(listen_to_ack, socketfd, recv_window);
 
     int data_read = 0;
+
     int start = 0;
     int end = window_size - 1;
     int i = 0;
     int ind = 0;
 
-    cout << "begin: " << window_size - shift_index << endl;
+	//timer for the program
+	auto timeStart = std::chrono::steady_clock::now();
+
+	cout << "begin: " << window_size - shift_index << endl;
     while (!donzo)
     {
         data_read = read_into_buffer(file, buffer, packet_size, window_size, window_size - shift_index);
+
 
         update_sliding_window(window, seq_range, &current_seq, shift_index, window_size, data_read, packet_size);
 
         while (shift_index > 0)
         {
-            cout << "End Window: " << end << endl;
+
+            //cout << "End Window: " << end << endl;
             i = (window_size)-shift_index;
-            cout << "seq_num sent: " << ntohl(window[i].seq_num) << " packet_size: " << sizeof(buffer[i]) << endl;
+            //cout << "seq_num sent: " << htonl(window[i].seq_num) << " packet_size: " << sizeof(buffer[i]) << endl;
             // Set time_sent variable to time now
             window[i].time_sent = std::chrono::steady_clock::now();
+
+			 for (int z = 0; z < ack_errors.size(); z++)
+            {
+                if (ntohl(window[i].seq_num) == ack_errors[z])
+                {
+                    window[i].send_ack = false;
+                }
+            }
             serialize(buffer[i], window[i], data_read, packet_size);
-            cout << "Checksum is : " << checksum(buffer[i], buffer_size) << endl;
-            if (window[i].seq_num == 100663296)
+            //dont send a packets in a sequence number if requested
+            for (int z = 0; z < packet_errors.size(); z++)
+            {
+                if (window[i].seq_num == packet_errors[z])
+                {
+                    shift_index--;
+                    recv_window[i].sent = true;
+                    continue;
+                }
+            }
+
+            serialize(buffer[i], window[i], data_read, packet_size);
+            //cout << "Checksum is : " << checksum(buffer[i], buffer_size) << endl;
+            /*if (window[i].seq_num == 100663296)
             {
                 cout << "Losing packet " << window[i].seq_num << endl;
                 shift_index--;
                 recv_window[i].sent = true;
                 continue;
-            }
-            cout << "buffer sent " << buffer[i][0] << buffer[i][1] << buffer[i][2] << endl;
+            }*/
+            //cout << "buffer sent " << buffer[i][0] << buffer[i][1] << buffer[i][2] << endl;
+			cout << "Packet " << ntohl(window[i].seq_num) << " Sent" << endl;
             sendto(socketfd, buffer[i], packet_size + struct_size(window[0]), 0,
                    (const struct sockaddr *)&client_addr, sizeof(client_addr));
             shift_index--;
             recv_window[i].sent = true;
-            cout << "Packet " << current_packet << " has been sent..." << endl;
+            //cout << "Packet " << current_packet << " has been sent..." << endl;
             current_packet++;
         }
 
@@ -248,22 +301,26 @@ int main(int argc, char *argv[])
                 auto value = win_s.time_since_epoch();
                 long windowVal = value.count();
 
-                double timeout = 0.001;
                 auto now = std::chrono::steady_clock::now();
-                std::chrono::duration<double> elapsed_seconds;
+                double elapsed_seconds;
+
                 if (windowVal != 0)
                 {
-                    elapsed_seconds = now - window[ii].time_sent;
+                    elapsed_seconds = double(std::chrono::duration_cast<std::chrono::milliseconds> ( now - window[ii].time_sent).count());
                 }
-                if (elapsed_seconds.count() > timeout && recv_window[ii].sent && !recv_window[ii].recieved)
+                if (elapsed_seconds > timeout && recv_window[ii].sent && !recv_window[ii].recieved)
                 {
-                    cout << "A timeout for packet " << window[ii].seq_num << " recieved..." << endl;
+					window[ii].send_ack = true;
+                    cout << "A timeout for packet " << ntohl(window[ii].seq_num) << " recieved..." << endl;
 
                     window[ii].time_sent = std::chrono::steady_clock::now();
                     serialize(buffer[ii], window[ii], data_read, packet_size);
                     sendto(socketfd, buffer[ii], packet_size + struct_size(window[0]), 0,
                            (const struct sockaddr *)&client_addr, sizeof(client_addr));
-                }
+
+					cout << "Packet " << ntohl(window[ii].seq_num) << " Re-Transmitted." << endl; 
+                	retransmitted++;
+				}
             }
         }
 
@@ -281,7 +338,7 @@ int main(int argc, char *argv[])
         else
         {
 
-            cout << "Array_index: " << ind << endl;
+            //cout << "Array_index: " << ind << endl;
             if (recv_data.first == "ack")
             {
                 // cout << recv_data.second << " Bro " << start << " Bro "<<  endl;
@@ -295,7 +352,7 @@ int main(int argc, char *argv[])
                 }
                 recv_window[ind].recieved = true;
 
-                // cout << "ack " << recv_data.second << " recieved..." << endl;
+                cout << "ack " << ntohl(recv_data.second) << " recieved..." << endl;
             }
             else
             {
@@ -310,10 +367,40 @@ int main(int argc, char *argv[])
 
         shift_index = slidingCheck(recv_window, window_size);
 
-        cout << "shiftIndex: " << shift_index << endl;
+        //cout << "shiftIndex: " << shift_index << endl;
         check(&start, &end, shift_index, seq_range);
         shiftWindow(buffer, recv_window, window, shift_index, window_size, buffer_size);
+
+		string windowCurrent = "[";
+		for (int i = 0; i < window_size-1; i++) {
+			
+			windowCurrent += std::to_string(ntohl(window[i].seq_num));
+			windowCurrent += ", ";
+		}
+		windowCurrent += std::to_string(ntohl(window[window_size-1].seq_num));
+		windowCurrent += "]";
+
+		cout << "Current window = " << windowCurrent << endl;
     }
+
+	auto timeEnd = std::chrono::steady_clock::now();
+
+	double elapsed_time = double(std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeStart).count())/1000;
+
+	cout << "Session sucessfully terminated" << endl;
+	cout << endl;
+
+	cout << "Number of original packets sent: " << current_packet << endl;
+	cout << "Number of retransmitted packts: " << retransmitted << endl;
+	cout << "Total elapsed time: " <<  elapsed_time << endl;
+	double effectiveThroughput = ((file_size/1000)/1000)/elapsed_time;
+	cout << "Total throughput (Mbps): " << effectiveThroughput + ((retransmitted*packet_size)/1000/1000/elapsed_time) << endl;
+	cout << "Effective throughput (Mbps): " << effectiveThroughput<< endl; 
+	
+	
+	file.close();
+
+	first.join();
 
     return 0;
 }
@@ -325,7 +412,7 @@ bool update_sliding_window(packet window[], int seq_range, int *current_seq, int
 
     while (i != window_size)
     {
-        cout << *current_seq << endl;
+        //cout << *current_seq << endl;
         window[i].seq_num = htonl(*current_seq);
         if (i == (window_size - 1))
         {
@@ -355,7 +442,7 @@ int listen_to_ack(int socketfd, rec_send recv_window[])
     {
 
         recvfrom(socketfd, (struct ack *)&ack, sizeof(ack), 0, NULL, NULL);
-        cout << "checkmark" << endl;
+        //cout << "checkmark" << endl;
 
         unique_lock<mutex> lck(mtx);
         if (!ack.nak)
@@ -388,6 +475,7 @@ int listen_to_ack(int socketfd, rec_send recv_window[])
 /*
 Prints out packet information for debugging.
 window: array of packets to print;
+
 all: if true, prints all packets, otherwise, prints singular packet
 index: only used if "all" is true, index for the specified packet
 */
@@ -435,7 +523,7 @@ int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int ind
 int findIndex(int start, int end, int seq_num, int seq_range)
 {
 
-    cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << seq_num << endl;
+    //cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << seq_num << endl;
     if (start < end || seq_num > end)
     {
         return seq_num - start;
@@ -514,7 +602,7 @@ int filesize(ifstream &file)
 
 int read_into_buffer(ifstream &file, char *buffer[], int packet_size, int window_size, int begin)
 {
-    cout << "beginning" << endl;
+    //cout << "beginning" << endl;
 
     int i = begin;
     while (i != window_size)
@@ -528,7 +616,7 @@ int read_into_buffer(ifstream &file, char *buffer[], int packet_size, int window
         i++;
     }
 
-    cout << "ending" << endl;
+    //cout << "ending" << endl;
 
     return file.gcount();
 }
@@ -540,6 +628,7 @@ int serialize(char buffer[], packet window, int buffer_size, int packet_size)
     memcpy(buffer + packet_size + sizeof(window.seq_num), &window.data_size, sizeof(window.data_size));
     memcpy(buffer + packet_size + sizeof(window.seq_num) + sizeof(window.data_size), window.ip, sizeof(window.ip));
     memcpy(buffer + packet_size + sizeof(window.seq_num) + sizeof(window.data_size) + sizeof(window.ip), &window.port, sizeof(window.port));
+	memcpy(buffer + packet_size + sizeof(window.seq_num) + sizeof(window.data_size) + sizeof(window.ip) + sizeof(window.port), &window.send_ack, sizeof(window.send_ack));
     return 0;
 }
 
@@ -552,26 +641,108 @@ void userInput()
     if (check == 'n')
     {
         cout << "" << endl;
+	   int protocol = 0;
+	   while (!GBN && !SR && !SW) {
 
-        cout << "Type of protocol (GBN, SR, or SAW): ";
-        cin >> protocol;
+       cout << "Type of protocol (Go-back N (0), Selective Repeat (1), or Stop and Wait (2)): ";
+	   cin >> protocol;
+	   cout<< endl;
+	   	   switch (int(protocol))
+	   {
+		case 0:
+			GBN = true;
+			break;
+		case 1:
+			SR = true;
+			break;
+		case 2:
+			SW = true;
+			break;
+		default:
+			cout << "Retry!" << endl;
+			
 
-        cout << "Size of packet: ";
-        cin >> packetSize;
+	   }
+	   }
+	   
+	   cout << "Size of packet: ";
+	   cin >> packet_size;
+	   cout << endl;
+	   bool Continue = false;
+	   
+	   while (!Continue) {
+	   	cout << "Timeout interval (User Selected (0) or Ping Calculated (1)): ";
+	   	cin >> timeoutInterval;
+	   	cout << endl;
 
-        cout << "Timeout interval (US or PC): ";
-        cin >> timeoutInterval;
-
-        cout << "Size of sliding window: ";
-        cin >> windowSize;
-
-        cout << "Range of sequence numbers: ";
-        cin >> rangeStart;
-        cin >> rangeEnd;
-
-        cout << "Situational errrors: ";
-        cin >> errors;
+		switch (timeoutInterval) {
+			case 0:
+				cout << "What time (ms) do you want to timeout at? ";
+				cin >> timeout;
+				cout << endl;
+				Continue = true;
+				break;
+			case 1:
+				cout << "Thanks for choosing ping calculated!" << endl;
+				Continue = true;
+				break;
+			default:
+				cout << "retry" << endl;
+				timeoutInterval = 1;
+		}   
     }
+
+		int windowSize;
+		cout << "Size of sequence numbers: ";
+		cin >> rangeStart;
+		cin >> rangeEnd;
+		cout << endl;
+
+		// losing acks
+        int error;
+        cout << "Ack sequence number you want to lose: ";
+        cin >> error;
+        cout << endl;
+        ack_errors.push_back(error);
+        while (1)
+        {
+            cout << "Do you want to lose more acks? Yes(1)/No(2) ";
+            int keepgoing;
+            cin >> keepgoing;
+            cout << endl;
+            if (keepgoing == 2)
+            {
+                break;
+            }
+            cout << "Ack sequence number you want to lose: ";
+            cin >> error;
+            cout << endl;
+            ack_errors.push_back(error);
+        }
+
+        // losing packets
+        cout << "Packet sequence number you want to lose: ";
+        cin >> error;
+        cout << endl;
+        packet_errors.push_back(error);
+        while (1)
+        {
+            cout << "Do you want to lose more packets? Yes(1)/No(2) ";
+            int keepgoing;
+            cin >> keepgoing;
+            cout << endl;
+            if (keepgoing == 2)
+            {
+                break;
+            }
+            cout << "Packet sequence number you want to lose: ";
+            cin >> error;
+            cout << endl;
+            packet_errors.push_back(error);
+        }
+
+
+	}
     else
     {
         // input default values for the above variables to run the program
@@ -580,23 +751,21 @@ void userInput()
 
 void printWindow(rec_send recv_window[], packet window[], int size)
 {
-    cout << "recv_window: ";
+    //cout << "recv_window: ";
     for (int i = 0; i < size; i++)
     {
-        cout << recv_window[i].recieved << " ";
+        //cout << recv_window[i].recieved << " ";
     }
-    cout << "\n"
-         << endl;
+    //cout << "\n"<< endl;
 
-    cout << "window_seq: ";
+    //cout << "window_seq: ";
 
     for (int i = 0; i < size; i++)
     {
-        cout << ntohl(window[i].seq_num) << " ";
+        //cout << ntohl(window[i].seq_num) << " ";
     }
 
-    cout << "\n"
-         << endl;
+    //cout << "\n" << endl;
 }
 
 void bufferPrint(char *buffer[])
@@ -605,10 +774,9 @@ void bufferPrint(char *buffer[])
     {
         for (int j = 0; j < 1024; j++)
         {
-            cout << buffer[i][j];
+            //cout << buffer[i][j];
         }
-        cout << "\n"
-             << endl;
+        //cout << "\n" << endl;
     }
 }
 
