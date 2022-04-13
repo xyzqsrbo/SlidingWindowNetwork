@@ -99,7 +99,7 @@ bool check(int *start, int *end, int shift_index, int seq_range);
 
 int slidingCheck(rec_send recv_window[], int size);
 
-int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int index, int size, int buffer_size);
+int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int index, int size, int packet_size, int structsize);
 
 int print_packet(packet window[], bool all, int index);
 
@@ -376,7 +376,7 @@ int main(int argc, char *argv[])
 
         //cout << "shiftIndex: " << shift_index << endl;
         check(&start, &end, shift_index, seq_range);
-        shiftWindow(buffer, recv_window, window, shift_index, window_size, buffer_size);
+        shiftWindow(buffer, recv_window, window, shift_index, window_size, packet_size, struct_size(window[0]));
 
 		string windowCurrent = "[";
 		for (int i = 0; i < window_size-1; i++) {
@@ -503,7 +503,7 @@ int print_packet(packet window[], bool all, int index, int size)
     }
 }
 
-int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int index, int size, int buffer_size)
+int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int index, int size, int packet_size, int structsize)
 {
     if (index == 0)
         return -1;
@@ -515,13 +515,13 @@ int shiftWindow(char *buffer[], rec_send recv_window[], packet window[], int ind
             recv_window[i].recieved = false;
             window[i] = {};
             delete[] buffer[i];
-            buffer[i] = new char[buffer_size];
+            buffer[i] = new char[packet_size + structsize];
         }
         else
         {
             recv_window[i] = recv_window[i + index];
             window[i] = window[i + index];
-            copy(buffer[i + index], buffer[i + index] + 51200, buffer[i]);
+            copy(buffer[i + index], buffer[i + index] + packet_size, buffer[i]);
         }
     }
     return 0;
@@ -586,7 +586,6 @@ int struct_size(packet packet)
     size += sizeof(packet.checksum);
     size += sizeof(packet.seq_num);
     size += sizeof(packet.time_sent);
-    size += sizeof(packet.ip);
     size += sizeof(packet.port);
     return size;
 }
@@ -617,7 +616,7 @@ int read_into_buffer(ifstream &file, char *buffer[], int packet_size, int window
     int i = begin;
     while (i != window_size)
     {
-        file.read(buffer[i], 51200);
+        file.read(buffer[i], packet_size);
 
         if (packet_size > file.gcount())
         {
