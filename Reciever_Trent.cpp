@@ -63,7 +63,7 @@ int write_into_buffer(char *buffer[], fstream &MyFile, int packet_size, int arra
 
 int slidingCheck(bool recv_window[], int size);
 
-int shiftWindow(char *buffer[], bool recv_window[], packet window[], int index, int size, int buffer_size);
+int shiftWindow(char *buffer[], bool recv_window[], packet window[], int index, int size, int packet_size, int structsize);
 
 bool check(int *start, int *end, int shift_index, int seq_range);
 
@@ -81,7 +81,7 @@ int serialize(packet *window, int packet_size);
 
 int findIndex(int start, int end, int seq_num, int seq_range);
 
-int write_into_file(fstream &file, char *buffer[], packet window[], int window_size, int file_size, int shift_index);
+int write_into_file(fstream &file, char *buffer[], packet window[], int window_size, int file_size, int shift_index, int packet_size);
 
 void printWindow(bool recv_window[], packet window[], int size);
 
@@ -238,6 +238,12 @@ int main(int argc, char *argv[])
         {
             if (array_index = findIndex(start, end, ntohl(temp.seq_num), seq_range), array_index < 0 || array_index >= window_size)
             {
+		ack.seq_num = temp.seq_num;
+    		ack.nak = false;
+    		ack.fin = false;
+    		sendto(socketfd, (struct ack *)&ack, sizeof(ack), 0,
+           (const struct sockaddr *)&client_addr, sizeof(client_addr));
+
 				retransmitted++;
 				all_packets++;
             }
@@ -249,8 +255,8 @@ int main(int argc, char *argv[])
 
                 printWindow(recv_window, window, window_size);
 
-                cout << "Ack sequence Num: " << ntohl(temp.seq_num) << endl;
-                cout << "Array Index: " << array_index << endl;
+                //cout << "Ack sequence Num: " << ntohl(temp.seq_num) << endl;
+                //cout << "Array Index: " << array_index << endl;
 
                 ack.seq_num = temp.seq_num;
                 ack.nak = false;
@@ -270,9 +276,9 @@ int main(int argc, char *argv[])
 
         //cout << "shift_index" << shift_index << endl;
 
-        data_written = data_written + write_into_file(MyFile, buffer, window, window_size, file_size, shift_index);
+        data_written = data_written + write_into_file(MyFile, buffer, window, window_size, file_size, shift_index, packet_size);
 
-        //cout << "data Written " << data_written << endl;
+        cout << "data Written " << data_written << endl;
 
         if (data_written >= file_size)
         {
@@ -339,11 +345,7 @@ int write_into_buffer(char *buffer[], fstream &MyFile, int packet_size, int arra
 int findIndex(int start, int end, int seq_num, int seq_range)
 {
     //cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << seq_num << endl;
-    if (start == end)
-    {
-        return 0;
-    }
-    else if (start < end || seq_num > end)
+    if (start <= end || seq_num > end)
     {
         return (seq_num - start);
     }
@@ -458,12 +460,12 @@ int file_size(fstream &file)
     return file_size;
 }
 
-int write_into_file(fstream &file, char *buffer[], packet window[], int window_size, int file_size, int shift_index)
+int write_into_file(fstream &file, char *buffer[], packet window[], int window_size, int file_size, int shift_index, int packet_size)
 {
     int i = 0;
     while (i != shift_index)
     {
-        //cout << "data_size: " << ntohl(window[i].data_size) << endl;
+        cout << "data_size: " << ntohl(window[i].data_size) << endl;
         file.write(buffer[i], ntohl(window[i].data_size));
 
         //cout << "data actually written" << file.tellg() << endl;
@@ -476,7 +478,7 @@ int write_into_file(fstream &file, char *buffer[], packet window[], int window_s
         i++;
     }
 
-    return (i * 51200);
+    return (i * packet_size);
 }
 
 int serialize(packet *window, int packet_size)
@@ -484,7 +486,7 @@ int serialize(packet *window, int packet_size)
 
     memcpy(&(window->seq_num), incoming + packet_size, sizeof(window->seq_num));
     memcpy(&(window->data_size), incoming + packet_size + sizeof(window->seq_num), sizeof(window->data_size));
-	memcpy(&(window->send_ack), incoming + packet_size + sizeof(window->seq_num) + sizeof(window->data_size), sizeof(window->send_ack));
+    memcpy(&(window->send_ack), incoming + packet_size + sizeof(window->seq_num) + sizeof(window->data_size) + 16 + 4, sizeof(window->send_ack));
     return 0;
 }
 bool update_sliding_window(packet window[], int seq_range, int *current_seq, int shift_index, int window_size, int packet_size)
