@@ -456,7 +456,7 @@ int listen_to_ack(int socketfd, rec_send recv_window[])
         {
             recv_data.first = "ack";
             recv_data.second = ntohl(ack.seq_num);
-            cout << "recieved ack num: " << recv_data.second << endl;
+            //cout << "recieved ack num: " << recv_data.second << endl;
         }
         else
         {
@@ -531,10 +531,8 @@ int findIndex(int start, int end, int seq_num, int seq_range)
 {
 
     //cout << "Array Start: " << start << " Array End: " << end << " Seq Num: " << seq_num << endl;
-    if(start == end){
-		return 0;
-	}
-	if (start < end || seq_num > end)
+   
+	if (start <= end || seq_num > end)
     {
         return seq_num - start;
     }
@@ -713,7 +711,7 @@ void userInput()
 
 		char want;
 
-		cout << "Do you want to simulate ack loss? (y/n) ";
+		cout << "Do you want to simulate ack loss or randomize? (y/n/r) ";
 		cin >> want;
 		if (want == 'y') {
 
@@ -738,10 +736,14 @@ void userInput()
             cout << endl;
             ack_errors.push_back(error);
         }
+		} else if (want == 'r') {
+			int error;
+			error = rand()%windowSize;
+			ack_errors.push_back(error);
 		}
 
 	
-		cout << "Do you want to simulate packet loss? (y/n) ";
+		cout << "Do you want to simulate packet loss or randomize? (y/n/r) ";
 		cin >> want;
 		if (want == 'y') {
 		int error;
@@ -765,6 +767,10 @@ void userInput()
             cout << endl;
             packet_errors.push_back(error);
         }
+		} else if (want == 'r') {
+			int error;
+			error = rand()%windowSize;
+			ack_errors.push_back(error);
 		}
 
 
